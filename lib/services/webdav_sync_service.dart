@@ -155,11 +155,12 @@ class WebDavSyncService with WidgetsBindingObserver {
         final previous = prior is Map ? prior : const {};
         final localHistory = await LibraryStore.instance.backupSnapshot();
         if (!current()) return;
-        final localSnapshot = await LibraryBackupService().capture(
-          includeAi: false,
+        final localShelf = ShelfStore.instance.records();
+        final localKeys = _storedKeys(
+          localShelf,
+          localHistory.history,
+          localHistory.watched,
         );
-        if (!current()) return;
-        final localKeys = _snapshotKeys(localSnapshot);
         final pending = <String, Set<String>>{};
         for (final type in localKeys.keys) {
           final baseline = (previous[type] as List? ?? const []).cast<String>();
@@ -250,8 +251,11 @@ class WebDavSyncService with WidgetsBindingObserver {
         }
         // A delete while the request was in flight needs another pass, before
         // the cloud snapshot can restore that row on screen.
-        final latestKeys = _snapshotKeys(
-          await LibraryBackupService().capture(includeAi: false),
+        final latestHistory = await LibraryStore.instance.backupSnapshot();
+        final latestKeys = _storedKeys(
+          ShelfStore.instance.records(),
+          latestHistory.history,
+          latestHistory.watched,
         );
         if (!current()) return;
         if (localKeys.keys.any(
@@ -284,7 +288,7 @@ class WebDavSyncService with WidgetsBindingObserver {
         _applying = true;
         try {
           await ShelfStore.instance.applySyncedShelf(
-            before: localSnapshot.shelf,
+            before: localShelf,
             incoming: incoming.shelf,
           );
           if (!current()) return;
@@ -339,6 +343,23 @@ class WebDavSyncService with WidgetsBindingObserver {
 
   static String _historyKey(Map<String, dynamic> record) =>
       '${record['kind']}:${record['id']}';
+
+  // Reading cloud data must not first serialize/validate unrelated local fields.
+  // Only identities are needed to detect deletes and protect concurrent edits.
+  static Map<String, List<String>> _storedKeys(
+    List<ShelfRecord> shelf,
+    List<Map<String, dynamic>> history,
+    Map<String, Map<String, int>> watched,
+  ) => {
+    'shelf': shelf.map((record) => ShelfStore.keyOf(record.item)).toList(),
+    'history': history
+        .map(
+          (record) =>
+              '${record['kind']}:${record['contentId'] ?? record['id']}',
+        )
+        .toList(),
+    'watched': watched.keys.toList(),
+  };
 
   static Map<String, List<String>> _snapshotKeys(LibraryBackup backup) => {
     'shelf': backup.shelf
