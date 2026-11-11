@@ -7,11 +7,43 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fqapp/pages/library_backup_page.dart';
 import 'package:fqapp/pages/webdav_sync_page.dart';
+import 'package:fqapp/services/app_theme_style.dart';
+import 'package:fqapp/widgets/wenku/wenku_ui.dart';
 
 void main() {
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('archive content starts below the title on a narrow phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final previous = AppThemeStyleStore.instance.value;
+    AppThemeStyleStore.instance.value = AppThemeStyle.archive;
+    addTearDown(() => AppThemeStyleStore.instance.value = previous);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            padding: const EdgeInsets.only(top: 32),
+            textScaler: TextScaler.linear(1.3),
+          ),
+          child: child!,
+        ),
+        home: const WebDavSyncPage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('云端优先覆盖书架与阅读进度')).dy,
+      greaterThan(tester.getBottomRight(find.byType(ArchiveRouteTitle)).dy),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('backup page opens WebDAV settings and validates the address', (

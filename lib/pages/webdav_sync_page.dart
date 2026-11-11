@@ -67,6 +67,8 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
         setState(
           () => _message = error is WebDavException
               ? error.message
+              : error is FormatException
+              ? '备份数据校验失败，请查看上方同步状态'
               : '保存或同步失败，请检查连接设置及设备安全存储后重试',
         );
       }
@@ -187,7 +189,7 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
                         _service.status.value,
                         key: const Key('webdav-status'),
                       ),
-                      if (_message != null)
+                      if (_message != null && _message != _service.status.value)
                         Padding(
                           padding: const EdgeInsets.only(top: 12),
                           child: Text(_message!),
