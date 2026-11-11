@@ -79,7 +79,7 @@ Future<void> main() async {
 /// 这些都不决定界面能不能起来，所以失败只记日志（见 [main]）。
 Future<void> _prepareRuntime() async {
   registerPortedUiLicenses();
-  if (isWindowsDesktop) await DesktopPlatform.instance.initialize();
+  if (isDesktopPlatform) await DesktopPlatform.instance.initialize();
   // 应用内日志：接管 debugPrint 与 FlutterError.onError，未处理异步异常由
   // [main] 的 runZonedGuarded 捕获；文件持久化异步开启，失败只退回内存模式。
   AppLog.instance.install();
@@ -98,7 +98,7 @@ Future<void> _prepareRuntime() async {
   // Rust 核心日志的读取入口：日志页「Rust」视图读 runtime_dir/rust.log。
   // 核心只在 Android 落盘（桌面/测试构建不装 logger），读不到时页面给空态。
   RustLogSource.reader = BackendService.instance.readRustLog;
-  if (isWindowsDesktop) {
+  if (isDesktopPlatform) {
     DesktopPlatform.instance.beforeClose = () async {
       DramaDownloader.instance.pauseAll();
       AudioDownloader.instance.pauseAll();
@@ -252,11 +252,11 @@ class _FqAppState extends State<FqApp> {
   // Official tabbar + 18dp applies on every page. Our floating dock is 64
   // high with an 8px gap; the desktop shell has no bottom bar.
   final _audioRoutes = AudioFloatingRoutes(
-    defaultBottomInset: isWindowsDesktop ? 0 : 72,
+    defaultBottomInset: isDesktopPlatform ? 0 : 72,
   );
   // Desktop fullscreen reparents the content; keep the playback owner alive.
   final _audioScopeKey = GlobalKey();
-  final _navigatorKey = isWindowsDesktop
+  final _navigatorKey = isDesktopPlatform
       ? DesktopPlatform.navigatorKey
       : GlobalKey<NavigatorState>();
 
@@ -313,7 +313,7 @@ class _FqAppState extends State<FqApp> {
                                 ),
                         child: AudioFloatingRouteScope(
                           routes: _audioRoutes,
-                          child: isWindowsDesktop
+                          child: isDesktopPlatform
                               ? DesktopAppFrame(child: playback)
                               : playback,
                         ),
@@ -607,7 +607,7 @@ class _RootShellState extends State<RootShell> {
         ),
       );
     }
-    if (isWindowsDesktop) {
+    if (isDesktopPlatform) {
       return ValueListenableBuilder<int>(
         valueListenable: desktopTab,
         builder: (context, index, _) {

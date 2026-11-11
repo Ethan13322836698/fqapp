@@ -26,12 +26,16 @@ import 'platform_channel.dart';
 bool get isWindowsDesktop =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
-/// On Windows an inactive window is still visible; it simply lacks input focus.
+bool get isMacOSDesktop =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+bool get isDesktopPlatform => isWindowsDesktop || isMacOSDesktop;
+
+/// On desktop an inactive window is still visible; it simply lacks input focus.
 /// Only hidden/paused/detached windows should defer foreground video playback.
 bool playbackAppIsActive(AppLifecycleState? state) =>
     state == null ||
     state == AppLifecycleState.resumed ||
-    (isWindowsDesktop && state == AppLifecycleState.inactive);
+    (isDesktopPlatform && state == AppLifecycleState.inactive);
 
 /// 桌面窗口只是失焦时，是否仍算「在前台」。
 ///
@@ -73,7 +77,7 @@ class DesktopPlatform with WindowListener {
   void _emit(String name, dynamic event) => _events[name]?.add(event);
 
   Future<void> initialize() async {
-    if (!isWindowsDesktop) return;
+    if (!isDesktopPlatform) return;
     MediaKit.ensureInitialized();
     await windowManager.ensureInitialized();
     PlatformChannels.invoke = invoke;
@@ -110,6 +114,7 @@ class DesktopPlatform with WindowListener {
       _emit('fqapp/system_tts_events', {'type': 'error', 'id': id});
     });
     // Optional system media integration must not prevent reading or startup.
+    if (!isWindowsDesktop) return;
     try {
       await SMTCWindows.initialize();
       _smtc = SMTCWindows();
@@ -291,13 +296,28 @@ class DesktopPlatform with WindowListener {
           if (context == null) {
             throw PlatformException(code: 'not_ready', message: '窗口尚未就绪');
           }
+          if (isMacOSDesktop) {
+            return const MethodChannel(
+              'fqapp/macos',
+            ).invokeMethod<String>('login');
+          }
           return DesktopLogin.open(context);
         }
         if (method == 'cancelLogin') {
+          if (isMacOSDesktop) {
+            return const MethodChannel(
+              'fqapp/macos',
+            ).invokeMethod<void>('cancelLogin');
+          }
           DesktopLogin.cancel();
           return null;
         }
         if (method == 'clearSession') {
+          if (isMacOSDesktop) {
+            return const MethodChannel(
+              'fqapp/macos',
+            ).invokeMethod<void>('clearSession');
+          }
           await DesktopLogin.clearSession();
           return null;
         }
@@ -316,9 +336,12 @@ class DesktopPlatform with WindowListener {
       case 'engines':
         final voices = await _tts.getVoices;
         return {
-          'defaultEngine': 'windows',
+          'defaultEngine': isMacOSDesktop ? 'macos' : 'windows',
           'engines': [
-            {'package': 'windows', 'label': 'Windows 默认语音'},
+            {
+              'package': isMacOSDesktop ? 'macos' : 'windows',
+              'label': '系统默认语音',
+            },
             if (voices is List)
               for (final voice in voices)
                 if (voice is Map && voice['name'] is String)
@@ -345,7 +368,9 @@ class DesktopPlatform with WindowListener {
         // 0.5 基线），所以这里减掉同一个偏移才是 app 侧的 rate。
         // 早先是 *0.5，等效 0.5r+0.5：拉满 2.0× 实际只有 1.5×。
         await _tts.setSpeechRate(
-          ((args['rate'] as num?)?.toDouble() ?? 1) - .5,
+          isMacOSDesktop
+              ? (((args['rate'] as num?)?.toDouble() ?? 1) * .5).clamp(.1, 1.0)
+              : ((args['rate'] as num?)?.toDouble() ?? 1) - .5,
         );
         return 300;
       case 'speak':
@@ -431,6 +456,14 @@ class DesktopPlatform with WindowListener {
     'systemBrightness': 1.0,
   };
   void _updateAwake() {
+    if (isMacOSDesktop) {
+      unawaited(
+        const MethodChannel('fqapp/macos')
+            .invokeMethod<void>('setKeepAwake', _readerAwake || _playerAwake)
+            .catchError((Object _) {}),
+      );
+      return;
+    }
     final call = DynamicLibrary.open('kernel32.dll')
         .lookupFunction<Uint32 Function(Uint32), int Function(int)>(
           'SetThreadExecutionState',
@@ -546,7 +579,11 @@ class DesktopPlatform with WindowListener {
       'bytes': bytes,
       'byteLength': bytes.length,
       if (file.name.toLowerCase().endsWith('.txt'))
-        'text': decodeDesktopText(bytes),
+        'text': isMacOSDesktop
+            ? await const MethodChannel(
+                'fqapp/macos',
+              ).invokeMethod<String>('decodeText', bytes)
+            : decodeDesktopText(bytes),
     };
   }
 }

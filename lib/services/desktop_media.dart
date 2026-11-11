@@ -12,6 +12,13 @@ typedef _FreeNative = Void Function(Pointer<Utf8>);
 typedef _Free = void Function(Pointer<Utf8>);
 
 String desktopCoreLibraryPath() {
+  if (Platform.isMacOS) {
+    final bundled = File(
+      '${File(Platform.resolvedExecutable).parent.parent.path}/Frameworks/libfqapi_core.dylib',
+    );
+    if (bundled.existsSync()) return bundled.path;
+    return File('rust/target/release/libfqapi_core.dylib').absolute.path;
+  }
   final bundled = File(
     '${File(Platform.resolvedExecutable).parent.path}/fqapi_core.dll',
   );

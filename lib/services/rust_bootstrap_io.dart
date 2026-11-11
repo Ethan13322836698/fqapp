@@ -2,6 +2,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 import 'dart:io';
 
 import '../src/rust/frb_generated.dart';
+import 'desktop_media.dart';
 
 /// 初始化 flutter_rust_bridge 运行时（原生平台）。
 ///
@@ -17,6 +18,11 @@ Future<void> initRustRuntime() {
     // 它要求整个 App 里只有一个用到 flutter_rust_bridge 的包（本项目满足）。
     return RustLib.init(
       externalLibrary: ExternalLibrary.process(iKnowHowToUseIt: true),
+    );
+  }
+  if (Platform.isMacOS) {
+    return RustLib.init(
+      externalLibrary: ExternalLibrary.open(desktopCoreLibraryPath()),
     );
   }
   return RustLib.init();

@@ -25,6 +25,10 @@ migration:
       create_revision: c197ca5199e9ee5661e865596c9c07294dfab51c
       base_revision: c197ca5199e9ee5661e865596c9c07294dfab51c
 
+    - platform: macos
+      create_revision: c197ca5199e9ee5661e865596c9c07294dfab51c
+      base_revision: c197ca5199e9ee5661e865596c9c07294dfab51c
+
   # User provided section
 
   # List of Local paths (relative to this file) that should be

@@ -88,7 +88,7 @@
 
 <details><summary><b>需要注册或付费吗？有 iOS 版吗？</b></summary>
 
-不用注册也不用付费，App 里没有任何登录和支付功能。没有 iOS 版，目前只有安卓。
+不用注册也不用付费，App 里没有任何登录和支付功能。Android 和 Windows 已支持；macOS x64 / arm64 构建配置见 [MACOS.md](MACOS.md)，当前仍需 CI 和真机验证。
 
 </details>
 

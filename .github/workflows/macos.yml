@@ -1,0 +1,64 @@
+name: macOS x64 and arm64
+on:
+  workflow_dispatch:
+  push:
+    branches: [macos]
+    paths: ['lib/**', 'macos/**', 'rust/**', 'native/**', 'pubspec.*', 'scripts/*macos*', '.github/workflows/macos.yml']
+  pull_request:
+    paths: ['lib/**', 'macos/**', 'rust/**', 'native/**', 'pubspec.*', 'scripts/*macos*', '.github/workflows/macos.yml']
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: '1.99.1'
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+      - name: Resolve dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Analyze and test desktop adapters
+        run: |
+          python3 scripts/test_verify_macos_bundle.py
+          flutter analyze --no-pub
+          flutter test --no-pub test/desktop_platform_test.dart test/macos_platform_test.dart test/desktop_detail_layout_test.dart test/desktop_video_layout_test.dart
+      - name: Build, check architectures and package
+        run: |
+          bash scripts/build_macos.sh '${{ matrix.arch }}'
+          python3 scripts/smoke_macos_core.py 'dist/fqapp-macos-${{ matrix.arch }}.app'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fqapp-macos-${{ matrix.arch }}
+          path: |
+            dist/fqapp-macos-${{ matrix.arch }}.zip
+            dist/fqapp-macos-${{ matrix.arch }}.zip.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: failure()
+        with:
+          name: macos-${{ matrix.arch }}-logs
+          path: |
+            build/macos/Logs/**
+            macos/Podfile.lock
+          if-no-files-found: ignore
