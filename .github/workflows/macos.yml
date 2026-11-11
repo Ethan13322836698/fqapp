@@ -1,6 +1,12 @@
 name: macOS x64 and arm64
 on:
   workflow_dispatch:
+    inputs:
+      build_ref:
+        description: '构建分支或提交（默认使用 macos 分支）'
+        required: true
+        type: string
+        default: macos
   push:
     branches: [macos]
     paths: ['lib/**', 'macos/**', 'rust/**', 'native/**', 'pubspec.*', 'scripts/*macos*', '.github/workflows/macos.yml']
@@ -27,6 +33,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.build_ref || github.ref }}
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
         with:
           toolchain: '1.99.1'

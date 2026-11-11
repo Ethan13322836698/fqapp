@@ -4,7 +4,11 @@
 
 ## GitHub Actions
 
-选择 `macOS x64 and arm64` 工作流，在 `macos` 分支运行。两个任务分别使用
+GitHub Actions 左侧的手动入口需要此工作流文件存在于默认分支 `master`。
+仅把 macOS 代码推到功能分支不保证该入口出现在列表中。可只把
+`.github/workflows/macos.yml` 合入 `master`，保留实现代码在 `macos` 分支。
+选择 `macOS x64 and arm64` 工作流，点 Run workflow，`build_ref` 默认填 `macos`；
+工作流会从该分支取完整工程。两个任务分别使用
 Intel 和 Apple Silicon runner，产物为 `fqapp-macos-x64.zip` 和
 `fqapp-macos-arm64.zip`，附 SHA-256 校验文件。
 
