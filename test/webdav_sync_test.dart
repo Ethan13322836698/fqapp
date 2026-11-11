@@ -711,6 +711,32 @@ void main() {
     );
 
     test(
+      'invalid local export metadata does not block a valid cloud restore',
+      () async {
+        await ShelfStore.instance.add(
+          MediaItem(
+            id: 'old',
+            kind: 'book',
+            title: '旧书',
+            cover: '',
+            author: '',
+            badge: '',
+            ep: '',
+            wordNumber: 2147483648,
+          ),
+        );
+        remote = WebDavSyncDocument(
+          backup(
+            shelf: [ShelfRecord(item: item('cloud'), addedAt: DateTime(2025))],
+          ),
+        ).encode();
+        version++;
+        await service.sync();
+        expect(ShelfStore.instance.records().single.item.id, 'cloud');
+      },
+    );
+
+    test(
       'invalid remote never replaces the cloud file or local shelf',
       () async {
         await ShelfStore.instance.add(item('keep'));
