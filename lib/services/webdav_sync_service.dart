@@ -11,6 +11,7 @@ import '../models/webdav_sync_document.dart';
 import '../models/library_backup.dart';
 import 'encrypted_hive.dart';
 import 'library_backup_service.dart';
+import 'ai_reading/ai_backup.dart';
 import 'library_store.dart';
 import 'shelf_store.dart';
 import 'webdav_client.dart';
@@ -191,12 +192,30 @@ class WebDavSyncService with WidgetsBindingObserver {
           if (current()) status.value = '已建立云端备份 · 书架 ${local.shelf.length} 本';
           return;
         }
-        final document = WebDavSyncDocument.decode(remote.bytes!);
+        final WebDavSyncDocument document;
+        try {
+          document = WebDavSyncDocument.decode(remote.bytes!);
+        } on FormatException catch (error) {
+          throw WebDavException('云端同步文件无法读取：${error.message}；未覆盖本机记录');
+        }
         var incoming = document.backup;
         try {
           LibraryStore.validateSyncedHistory(incoming.history);
         } on FormatException catch (error) {
           throw WebDavException(error.message);
+        }
+        if (incoming.aiData case final ai?) {
+          try {
+            AiBackupPayload.fromJson(
+              jsonDecode(
+                utf8.decode(GZipDecoder().decodeBytes(base64Decode(ai))),
+              ),
+            );
+          } catch (_) {
+            throw const WebDavException(
+              '云端 AI 备份分段损坏或格式不兼容（DAV_AI），未覆盖本机书架；请用原设备重新导出有效备份',
+            );
+          }
         }
         if (pending.values.any((keys) => keys.isNotEmpty)) {
           final deletedHistory = pending['history']!;
@@ -253,7 +272,13 @@ class WebDavSyncService with WidgetsBindingObserver {
         }
         final aiHash = _aiFingerprint(incoming.aiData);
         if (incoming.aiData != null && aiHash != previous['aiHash']) {
-          await LibraryBackupService().restoreAi(incoming);
+          try {
+            await LibraryBackupService().restoreAi(incoming);
+          } on FormatException {
+            throw const WebDavException(
+              '云端 AI 备份分段无效（DAV_AI），未覆盖本机书架；请用原设备重新导出有效备份',
+            );
+          }
           if (!current()) return;
         }
         _applying = true;
@@ -301,7 +326,7 @@ class WebDavSyncService with WidgetsBindingObserver {
       if (current()) {
         status.value = switch (error) {
           WebDavException() => error.message,
-          FormatException() => '云端同步文件无效，未导入本机',
+          FormatException() => '备份字段校验失败（DAV_DATA）：${error.message}',
           _ => '同步失败，请检查网络、WebDAV 设置和安全存储后重试',
         };
       }
