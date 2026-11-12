@@ -20,7 +20,7 @@ mkdir -p "$ROOT/macos/Frameworks"
 output="$ROOT/macos/Frameworks/libfqapi_core.dylib"
 if [[ ${#libraries[@]} -eq 1 ]]; then cp "${libraries[0]}" "$output"; else lipo -create "${libraries[@]}" -output "$output"; fi
 install_name_tool -id '@rpath/libfqapi_core.dylib' "$output"
-lipo -verify_arch $architectures "$output"
+lipo "$output" -verify_arch $architectures
 if [[ -n "${TARGET_BUILD_DIR:-}" && -n "${FRAMEWORKS_FOLDER_PATH:-}" ]]; then
   destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
   mkdir -p "$destination"

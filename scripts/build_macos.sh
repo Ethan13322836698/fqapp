@@ -23,7 +23,7 @@ ditto "$source_app" "$app"
 # Each artifact must contain only the requested slices, including native plugins.
 while IFS= read -r -d '' binary; do
   if file -b "$binary" | grep -q 'Mach-O'; then
-    lipo -verify_arch $slices "$binary"
+    lipo "$binary" -verify_arch $slices
     if [[ "$arch" != universal && "$(lipo -archs "$binary")" == *' '* ]]; then
       lipo "$binary" -thin "$slices" -output "$binary.thin"
       chmod "$(stat -f %Lp "$binary")" "$binary.thin"
