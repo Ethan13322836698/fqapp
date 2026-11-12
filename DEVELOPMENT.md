@@ -1,4 +1,4 @@
-# fqapp 开发者文档
+# novel-sound 开发者文档
 
 面向构建、修改和调试本项目的开发者。用户使用说明见 [README.md](README.md)。
 
@@ -15,6 +15,7 @@
 - [构建 APK](#构建-apk)
 - [测试](#测试)
 - [Android 原生核心集成](#android-原生核心集成)
+- [本机密钥库（SecureKeyStorage）](#本机密钥库securekeystorage)
 - [API 对接说明](#api-对接说明)
 - [数据模型](#数据模型)
 - [页面说明](#页面说明)
@@ -84,7 +85,7 @@ Android WebView 由用户本人完成官方手机号登录和人机验证。Cook
 ## 项目结构
 
 ```
-fqapp/
+novel-sound/
 ├── lib/                             # Flutter UI、模型和本地状态
 │   ├── main.dart                    # AppBootstrap + RootShell
 │   ├── models/                      # 数据模型与响应解析
@@ -215,7 +216,7 @@ Rust 核心库由 `scripts/build_rust_backend.*` 生成；C 库由下一步 APK 
 ### 3. 构建 APK
 
 ```powershell
-cd fqapp
+cd novel-sound
 flutter pub get
 # 演示只出 arm64 调试包；正式出包是双 ABI 分包，见下方说明
 flutter build apk --debug --target-platform android-arm64
@@ -237,7 +238,7 @@ Rust 核心按 `arm64-v8a` 与 `armeabi-v7a` 两个 ABI 产出（`scripts/build_
 
 ### GitHub Actions 云端编译
 
-打开 [Actions → Android APK](https://github.com/ch6vip/fqapp/actions/workflows/android-apk.yml)，
+打开 [Actions → Android APK](https://github.com/ch6vip/novel-sound/actions/workflows/android-apk.yml)，
 点击 **Run workflow** 即可从源码构建。`master` 上的应用、原生库及构建配置变更也会自动触发。
 运行成功后，在该次运行的 **Artifacts** 中下载 `fqapp-arm64-运行编号`；其中包含
 `app-release.apk`、SHA-256、签名与 16 KiB 对齐报告、源码版本和工具版本，产物保留 14 天。
@@ -688,6 +689,57 @@ loopback HTTP 适配器只绑定 `127.0.0.1`，`/health`、`/api/v1/*` 与 `/src
 
 ---
 
+## 本机密钥库（SecureKeyStorage）
+
+Hive 主密钥与设备池密钥不再经过 `flutter_secure_storage`，改由应用自己的
+`SecureKeyStorage`（`lib/services/secure_key_storage.dart`）按平台落到系统级密钥库。
+这样做的直接原因是 `flutter_secure_storage_windows 3.1.2` 把 `win32` 钉在 5.x，
+挡住了 `wakelock_plus` / `package_info_plus` 的 Built-in Kotlin 版本（#205）。
+
+| 平台 | 实现 | 位置 |
+|---|---|---|
+| Android | AndroidKeyStore 内的 AES-256-GCM 密钥，密文存 `shared_prefs/fqapp_secure_keys.xml`；条目名作为 AAD | `android/app/src/main/kotlin/com/fqapp/fqapp/SecureKeyPlugin.kt` |
+| iOS | Keychain 通用密码项，`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` | `ios/Runner/AppDelegate.swift`（`SecureKeyBridge`） |
+| Windows | DPAPI（`CryptProtectData`，当前用户范围）保护的文件 `secure_keys.dpapi` | `lib/services/windows_dpapi_key_store.dart` |
+| Linux | libsecret（Secret Service）单个 JSON 条目，调用在独立 isolate 中执行 | `lib/services/linux_libsecret_key_store.dart` |
+
+失败语义与原来一致，且更严格：**“没有密钥”与“读不到密钥”必须分开**。
+
+- 只有平台回答“条目不存在”时才允许新建密钥；
+- Keystore/DPAPI/libsecret 报错一律抛给 `SecureKeyProvider`，由它失败关闭
+  （`EncryptedHive` 会拒绝明文回落或隔离箱文件，绝不静默覆盖）；
+- Windows 先写 `.tmp`、把旧文件轮换成 `.bak` 再改名，崩溃后仍能读到上一份密钥；
+- Linux 会先 `secret_service_get_sync(OPEN_SESSION | LOAD_COLLECTIONS)` 预热，
+  避免冷 keyring 首次查询误报“不存在”而另建密钥。
+
+### 迁移与回滚
+
+`defaultSecureKeyStorage()` 返回 `MigratingSecureKeyStorage`：读时先查本机密钥库，
+缺失才读旧 `flutter_secure_storage` 并回写；写时两边都写。因此：
+
+- 升级到本方案后，旧密钥在首次读取时自动搬家，书库/历史/WebDAV/AI 凭据保持可用；
+- 回滚到旧 APK 仍能读到同一把密钥（旧存储里有双写副本）；
+- 迁移成功会写一条 `keys` 标签的运行日志（“已将 … 迁移到本机密钥库”），
+  可在“设置 → 服务 → 运行日志”搜索 `keys` 核对。
+
+### 第二阶段：移除 `flutter_secure_storage`（未做，等一轮发布后）
+
+迁移完成后，旧包只剩“导入源”作用。满足下列条件即可删除：
+
+1. 线上版本全部经过一次含本方案的启动（本机密钥库已写入，日志可核对）；
+2. 删除 `lib/services/secure_key_storage.dart` 中的 `FlutterSecureKeyStorage`、
+   `MigratingSecureKeyStorage` 的 legacy 分支，以及 `pubspec.yaml` 的
+   `flutter_secure_storage` 依赖；
+3. `flutter pub upgrade`：`win32` 不再被钉住，`wakelock_plus` ≥1.8、
+   `package_info_plus` ≥10.1 自动落地；
+4. 之后才具备删除 `android/gradle.properties` 中 `android.builtInKotlin=false`
+   的前提（仍需先处理 `flutter_tts` 的 KGP，见 #205）。
+
+> macOS / Fuchsia 在本仓库没有 runner，也没有原生后端；这两个平台保持旧存储
+> （`defaultSecureKeyStorage()` 会回退），删除依赖后它们不再受支持。
+
+---
+
 ## API 对接说明
 
 App 通过 `ApiClient` 调用后端 **`/api/v1/*` 业务路由**（Rust 核心 `rust/src/endpoints/`），首页推荐使用
@@ -822,7 +874,7 @@ App 通过 `ApiClient` 调用后端 **`/api/v1/*` 业务路由**（Rust 核心 `
 - 书评的「回复 N」可展开回复（点击时懒加载，失败只在该条下提示，不影响列表）
 - 作者行整行可点进入作者主页（核心无关注端点，因此不提供假的关注按钮）
 - 底部：听书 / 下载 / 阅读（播放、续看）三键；听书与下载仅小说显示
-- 听书直接进入听书页并接续已保存的进度；下载一次点击即缓存整本（从续读位置起，进度显示在底栏，缓存中再点一次停止）。下载的章节不受缓存上限约束，也不会被自动清理
+- 听书直接进入听书页并接续已保存的进度；下载一次点击即缓存整本（从目录开头检查缺章，复用已有缓存，进度显示在底栏，缓存中再点一次停止）。下载的章节不受缓存上限约束，也不会被自动清理
 - 按内容类型打开小说阅读器、短剧/漫剧播放器、听书播放器或漫画阅读器
 - 续读/续听优先按已保存的章节 ID 定位，目录更新后仍能找到原章节
 - 富元数据直接取自同一份详情响应，不额外发请求；书评请求失败只隐藏该区块，不影响整页
@@ -1099,7 +1151,7 @@ curl http://127.0.0.1:18080/health
 - [x] 小说章节下载/离线缓存
 - [x] 发现类入口：搜索联想词与热搜、作者主页、排行榜、书评回复、章节试读预览
 - [x] Release 签名配置与 R8 混淆
-- [x] 整本 TXT 导出（离线缓存页每行「导出 TXT」→ 系统「下载」；重取最新目录与每章正文，按后端 `/api/download` 同形组装）
+- [x] 整本 TXT 导出（离线缓存页每行「导出 TXT」→ 系统「下载」；重取最新目录与每章正文，按后端 `/api/download` 同形组装。取文时可取消且不写文件；进入「正在保存文件」后等待系统回报成功或失败，期间不能取消或返回）
 - [ ] **按职责整理 `lib/widgets/video_player_chrome.dart`**（实测 5004 行，其中
       `_VideoPlayerChromeState` 一个类占 4580 行（311–4890），`part` 只切出一份 22 行的横屏进度条）。
       拆的是**职责**不是行数：每一块都改成「传值 + 回调」的无状态 widget，留在同一个 State
@@ -1134,12 +1186,91 @@ ChapterContent 原文、legacyText、缓存和导入文件保持原语义。Read
 
 验证：运行 flutter analyze --no-pub 与 flutter test；重点套件为 text_replacement_*、reader_text_replacement、reader_paragraph_actions、reader_chapter_layout、reader_pagination、reader_illustrations、offline_reader 和 system_tts。Android/Windows 的构建与真机超时终止行为仍须在对应环境验收；Linux 主机单测不代表设备或 AOT 验收完成。
 
-### 开发者测试台
+### AI 测试台
 
-AI 设置 → 高级 → 开发者模式 → 开发者测试台。开关仅保存在本机，默认关闭。
-可输入样例正文，以本次测试开关对比去屏蔽词效果，查看提示词与输出协议，
-通过现有 AI 试验请求流程获取修改建议、替换预览、耗时及错误；测试不会写入
-正式章节校对缓存，但联网请求会消耗额度，仍受正文传输授权和预算限制。
-可取消测试；离开页面也会取消请求。还支持离线粘贴 JSON，校验结构、定位与
-重叠错误，并预览替换结果。WebDAV 区域仅显示状态和同步规则，不显示密码，
-不会触发远程写入。设备实际 AI 服务和 WebDAV 端到端行为需另行验证。
+设置 → 阅读 → AI 阅读优化 → 高级 → AI 测试台。主页面使用全局提供商与模型，
+可输入样例正文、编辑本次行为提示词及切换本次去屏蔽词选项；这些编辑不修改全局设置。
+请求沿用正文上传授权、预算、用量账本与前台服务，显示流式进度、耗时、Token 用量、
+正文预览、修改详情和模型原始响应。测试结果不写入正式章节缓存，不自动重试。
+停止或退出测试台会取消请求，进入提示词编辑、请求预览或 JSON 校验子页时保留测试。
+结果保留所属请求快照，输入或配置变化后标记为上次结果。
+
+「查看请求」展示 System、User 和输出格式。输出协议优先于用户行为提示词，
+用户行为提示词优先于去屏蔽词等可选功能；JSON Schema 字段说明与 JSON 文本协议共用契约。
+「更多工具 → JSON 校验」可离线检查原文与模型响应，或带入已完成请求的原文和响应。
+WebDAV 配置与诊断由数据同步功能负责。
+
+## Linux / Arch x86_64（实验性运行基础）
+
+支持 Linux runner、bundle 内 Rust 核心、阅读/书架及 TXT/EPUB 本地导入。
+听书播放由下方第二批媒体基础提供；短剧、系统朗读、媒体键、常亮、亮度/系统栏、备份文件选择等桌面集成尚未实现。
+目前没有 Arch 打包或 Linux CI，也不提供正式 Release。
+
+Arch 构建依赖：Flutter stable（本批验证 3.47.9 / Dart 3.13.7）、Rust stable
+及 x86_64-unknown-linux-gnu target、clang、cmake、ninja、pkgconf、gtk3、libsecret。
+运行需要 GTK3、libsecret、glibc（含 iconv）、xdg-user-dirs 和图形会话，
+以及已启动且已解锁的 Secret Service（如 GNOME Keyring）。不要用 sudo 运行应用。
+媒体构建及运行还需要系统 libmpv（Arch 的 mpv 包），详见下方媒体说明。
+
+```bash
+flutter pub get
+flutter analyze --no-pub
+flutter build linux --release --no-pub
+./build/linux/x64/release/bundle/fqapp
+```
+
+请运行完整 bundle，保留同目录的 data/、lib/；Rust 只从可执行文件旁的
+lib/libfqapi_core.so 加载，不依赖启动时的工作目录。不需要手改 FRB 生成文件。
+CMake 调用 Cargo --locked 构建 release 核心，首次构建需可用的 pub/Cargo 缓存或网络。
+
+本地资料沿用 path_provider/Hive 的上游目录：Hive 在用户 Documents，
+导入书籍和后端在 application support 目录。不要将日常资料目录指向测试目录。
+Linux 每个 HOME 只允许一个写者（锁位于 ~/.local/share/fqapp/.writer.lock），
+第二个进程返回 23；锁随进程退出释放，不要删除正在使用的锁文件。
+密钥服务失败不回落为明文；密钥损坏或现有加密资料无法解密时拒绝替换资料。
+请恢复原 keyring 后重试，勿通过删除密钥或资料来解决启动错误。
+Linux 密钥操作等待真实完成，避免超时后迟到写与重试产生两个不同密钥；
+若 Secret Service 卡住，需要先修复服务，再关闭并重新启动应用。
+
+隔离启动检查应同时设置新的 HOME、XDG_CONFIG_HOME、XDG_DATA_HOME、
+XDG_CACHE_HOME、XDG_RUNTIME_DIR，并使用私有 D-Bus 与临时 keyring；仅改 HOME
+仍可能连接日常会话的密钥服务。虚拟显示器的启动结果不能替代实际 GPU、
+Wayland/X11 桌面、媒体或音频验收。
+
+### Linux 实验性媒体（第二批，依赖 Linux runtime base）
+
+Linux 复用桌面 media_kit 播放器，增加锁定的 media_kit_libs_linux 1.2.1。
+需系统 libmpv（Arch 的 mpv 包）；构建时检查库存在，不下载另一套 allocator。
+Rust/C CENC 使用 PIC 并与 core 一起构建。FRB 与媒体 FFI 从可执行文件相邻的
+绝对 lib/libfqapi_core.so 加载，不依赖启动 cwd。Windows/Android 加载与代理
+策略保留；Linux 沿用 reqwest 环境路由，不新增应用代理设置语义。
+
+听书支持普通 URI 与 CENC loopback Range、暂停、seek、倍速和销毁。
+关闭窗口在首批刷盘/后端关闭后释放全部播放器；创建期间销毁会关闭迟到会话。
+Linux 视频入口仍为 unavailable，等待真实图形播放验证再开放。
+TTS、MPRIS、portal、锁屏/挂起恢复与 idle inhibition 不在本批；播放器通知和
+保亮请求无系统集成效果。合成媒体 null 输出不证明物理声卡、GPU、Wayland。
+
+离线验证：构建 core 后，以 FQAPP_MEDIA_LIBRARY 指向 bundle 中绝对 core 路径，
+运行 python3 scripts/verify_windows_media.py；它复用 Windows 实际 FFI 合成媒体
+验证，覆盖本地/HTTP CENC、导出明文字节的音视频帧一致性、随机 Range、安全
+边界及会话撤销，只写 build/。然后设置 FQAPP_TEST_MEDIA 为生成的
+build/validation/windows-media/decoded.mp4 绝对路径，运行
+flutter test --no-pub --concurrency=1 test/desktop_media_playback_test.dart，
+验证实际 libmpv 播放、暂停、seek、倍速、完成及释放。
+
+上游完整检查使用 CI；本地运行 flutter analyze --no-pub、上述定向媒体检查及
+相关构建，不运行完整 Flutter/Rust 套件。资源受限机器串行执行，
+使用 systemd scope 限制 CPU/内存及 CARGO_BUILD_JOBS=2、
+CMAKE_BUILD_PARALLEL_LEVEL=2。隔离 HOME/keyring，不读取真实账号/媒体缓存。
+
+真实 Linux engine 接线回归入口：
+`flutter build linux --release --no-pub -t test/support/linux_media_runtime.dart`。
+在私有 HOME/XDG、D-Bus、Xvfb 和虚拟音频会话内运行生成的 bundle，设置
+`FQAPP_RUNTIME_ORIGIN=http://127.0.0.1:<port>`。该本地 HTTP 服务需提供支持 Range 的
+8 秒合成 `audio.wav` 和 `encrypted.mp4`（AAC/CENC，测试 key 为
+`00112233445566778899aabbccddeeff`）。入口使用真实 LinuxPlatform、NativePlayer、
+media_kit 原生纹理插件和 bundle 内 Rust/C 核心，检查创建、实际进度、暂停、seek、
+释放后 CENC listener 撤销，再在活跃 CENC 播放中正常关窗；监督进程须检查退出码 0。
+它是独立测试 target，不由产品 main 引用。此 bundle 不是产品包；交付前重新构建默认 target。
+该测试不证明物理声卡/GPU、完整产品存储关窗链或 Windows/Android 运行通过。

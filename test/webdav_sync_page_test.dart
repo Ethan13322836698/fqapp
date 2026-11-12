@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,9 +9,13 @@ import 'package:fqapp/pages/webdav_sync_page.dart';
 import 'package:fqapp/services/app_theme_style.dart';
 import 'package:fqapp/widgets/wenku/wenku_ui.dart';
 
+import 'support/secure_key_storage_mock.dart';
+
 void main() {
+  late Map<String, String> secureKeys;
+
   setUp(() {
-    FlutterSecureStorage.setMockInitialValues({});
+    secureKeys = mockSecureKeyStorage();
     SharedPreferences.setMockInitialValues({});
   });
 
@@ -94,9 +97,18 @@ void main() {
       final save = find.text('保存设置');
       await tester.ensureVisible(save);
       await tester.tap(save);
-      await tester.pumpAndSettle();
+      // The save chain now crosses two secure-storage backends (native + legacy
+      // mirror), so it needs event-loop turns that pumpAndSettle alone does not
+      // drive. Wait for the message instead of assuming one settle is enough.
+      for (var attempt = 0; attempt < 40; attempt++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+        if (find.text('设置已安全保存').evaluate().isNotEmpty) break;
+      }
       expect(find.text('设置已安全保存'), findsOneWidget);
-      final secure = await const FlutterSecureStorage().readAll();
+      final secure = secureKeys;
       final settings = jsonDecode(secure['fqapp.webdav.config.v1']!) as Map;
       expect(settings['password'], 'dummy-secret');
       expect(settings['enabled'], isFalse);
