@@ -29,11 +29,23 @@ jobs:
             runner: macos-15
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.build_ref || github.ref }}
+      - name: Verify Xcode and macOS SDK
+        run: |
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "Selected macOS SDK: $sdk_version"
+          if [ "${sdk_version%%.*}" -lt 26 ]; then
+            echo '::error::connectivity_plus requires macOS SDK 26 or newer (Xcode 26+).'
+            exit 1
+          fi
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
         with:
           toolchain: '1.99.1'
@@ -52,8 +64,10 @@ jobs:
           flutter test --no-pub test/desktop_platform_test.dart test/macos_platform_test.dart test/desktop_detail_layout_test.dart test/desktop_video_layout_test.dart
       - name: Build, check architectures and package
         run: |
-          bash scripts/build_macos.sh '${{ matrix.arch }}'
-          python3 scripts/smoke_macos_core.py 'dist/fqapp-macos-${{ matrix.arch }}.app'
+          set -o pipefail
+          mkdir -p build/validation/macos
+          bash scripts/build_macos.sh '${{ matrix.arch }}' 2>&1 | tee build/validation/macos/build.log
+          python3 scripts/smoke_macos_core.py 'dist/fqapp-macos-${{ matrix.arch }}.app' 2>&1 | tee build/validation/macos/smoke.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: fqapp-macos-${{ matrix.arch }}
@@ -67,5 +81,6 @@ jobs:
           name: macos-${{ matrix.arch }}-logs
           path: |
             build/macos/Logs/**
+            build/validation/macos/*.log
             macos/Podfile.lock
           if-no-files-found: ignore

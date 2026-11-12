@@ -18,8 +18,11 @@ Homebrew 动态库。macOS 播放库由固定版本的 media_kit macOS 插件提
 
 ## 本机编译
 
-需要完整 Xcode、Xcode Command Line Tools、Flutter 3.47.9、Rust 1.99.1、
-CocoaPods。先运行 `sudo xcodebuild -license accept`（若 Xcode 提示），
+需要完整 Xcode 26.2（或更新版本）、Xcode Command Line Tools、Flutter 3.47.9、Rust 1.99.1、
+CocoaPods。`connectivity_plus 7.3.1` 引用了 macOS 26 SDK 的 API，
+即使运行时有 `#available` 检查，旧 SDK 仍无法编译。CI 的两个架构都明确选择
+`/Applications/Xcode_26.2.app`；本机也应通过 `DEVELOPER_DIR` 或 `xcode-select`
+选择含 macOS 26 SDK 的 Xcode。最低运行系统仍是 macOS 12。先运行 `sudo xcodebuild -license accept`（若 Xcode 提示），
 并确认 `xcode-select -p` 指向完整 Xcode。
 
 ```bash

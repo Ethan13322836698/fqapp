@@ -5,8 +5,15 @@ arch="${1:-universal}"
 case "$arch" in x64) slices='x86_64';; arm64) slices='arm64';; universal) slices='x86_64 arm64';; *) echo 'Usage: build_macos.sh [x64|arm64|universal]' >&2; exit 2;; esac
 if [[ "$(uname -s)" != Darwin ]]; then echo 'Build on macOS with Xcode and CocoaPods.' >&2; exit 1; fi
 cd "$ROOT"
+sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+if [[ "${sdk_version%%.*}" -lt 26 ]]; then
+  echo 'connectivity_plus requires macOS SDK 26 or newer. Select Xcode 26+ with DEVELOPER_DIR or xcode-select.' >&2
+  exit 1
+fi
+xcodebuild -version
+echo "macOS SDK: $sdk_version"
 flutter pub get --enforce-lockfile
-flutter build macos --release
+flutter build macos --release --no-pub
 source_app="$ROOT/build/macos/Build/Products/Release/fqapp.app"
 [[ -d "$source_app" ]] || { echo 'Flutter app bundle missing' >&2; exit 1; }
 mkdir -p dist
