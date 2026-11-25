@@ -19,6 +19,8 @@ on:
       - 'pubspec.*'
       - 'scripts/*windows*'
       - '.github/workflows/windows.yml'
+      # Changes to the Apple mobile build are checked with the other release packages.
+      - '.github/workflows/ios.yml'
   push:
     branches: [master, listen-follow, listen-follow-ex]
     # 打 tag 也出包（与 android-apk.yml 同理）：发版时 Windows 绿色包随

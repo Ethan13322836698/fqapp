@@ -9,9 +9,9 @@ on:
         default: master
   push:
     branches: [master, macos]
-    paths: ['lib/**', 'macos/**', 'rust/**', 'native/**', 'pubspec.*', 'scripts/*macos*', '.github/workflows/macos.yml']
+    paths: ['lib/**', 'macos/**', 'rust/**', 'native/**', 'pubspec.*', 'scripts/*macos*', '.github/workflows/macos.yml', '.github/workflows/ios.yml']
   pull_request:
-    paths: ['lib/**', 'macos/**', 'rust/**', 'native/**', 'pubspec.*', 'scripts/*macos*', '.github/workflows/macos.yml']
+    paths: ['lib/**', 'macos/**', 'rust/**', 'native/**', 'pubspec.*', 'scripts/*macos*', '.github/workflows/macos.yml', '.github/workflows/ios.yml']
 permissions:
   contents: read
 concurrency:
@@ -67,6 +67,9 @@ jobs:
           set -o pipefail
           mkdir -p build/validation/macos
           bash scripts/build_macos.sh '${{ matrix.arch }}' 2>&1 | tee build/validation/macos/build.log
+      - name: Smoke test the packaged Rust core
+        run: |
+          set -o pipefail
           python3 scripts/smoke_macos_core.py 'dist/fqapp-macos-${{ matrix.arch }}.app' 2>&1 | tee build/validation/macos/smoke.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

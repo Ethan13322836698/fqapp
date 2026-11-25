@@ -36,6 +36,8 @@ on:
       - 'scripts/verify_android_apk.py'
       - 'scripts/verify_audio_cenc.cjs'
       - '.github/workflows/android-apk.yml'
+      # Changes to the Apple mobile build are checked with the other release packages.
+      - '.github/workflows/ios.yml'
       - '.cargo/config.toml'
   pull_request:
     # Fork PRs receive no signing secrets, so the signing step degrades to an
