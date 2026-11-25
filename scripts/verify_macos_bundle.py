@@ -23,14 +23,22 @@ count = 0
 for binary in (app / 'Contents').rglob('*'):
     if not binary.is_file() or binary.is_symlink():
         continue
-    kind = subprocess.check_output(['file', '-b', str(binary)], text=True)
+    kind = subprocess.check_output(
+        ['file', '-b', str(binary)], text=True, errors='replace'
+    )
     if 'Mach-O' not in kind:
         continue
     count += 1
-    actual = set(subprocess.check_output(['lipo', '-archs', str(binary)], text=True).split())
+    actual = set(
+        subprocess.check_output(
+            ['lipo', '-archs', str(binary)], text=True, errors='replace'
+        ).split()
+    )
     if actual != required:
         raise SystemExit(f'Unexpected slices in {binary.name}: {actual}; expected {required}')
-    dependencies = subprocess.check_output(['otool', '-L', str(binary)], text=True).splitlines()[1:]
+    dependencies = subprocess.check_output(
+        ['otool', '-L', str(binary)], text=True, errors='replace'
+    ).splitlines()[1:]
     for dependency in dependencies:
         if not dependency.startswith(('\t', ' ')):
             continue

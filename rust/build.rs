@@ -1,9 +1,9 @@
 fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
     // The encrypted-media C implementation (the same sources `CryptoDataSource`
-    // links) is needed on iOS too: `desktop_media` exports the `sp_stream_*`
-    // entry points and the build fails without it.
-    if target_os != "windows" && target_os != "linux" && target_os != "ios" {
+    // links) is needed on iOS and macOS too: `desktop_media` exports the
+    // `sp_stream_*` entry points and the build fails without it.
+    if !matches!(target_os.as_str(), "windows" | "linux" | "ios" | "macos") {
         return;
     }
     let sources = [

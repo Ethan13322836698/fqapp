@@ -5,3 +5,6 @@
 # Xcode-related
 **/dgph
 **/xcuserdata/
+
+# Flutter 生成的插件注册表（与 ios/.gitignore 一致，不入库）
+Flutter/GeneratedPluginRegistrant.swift

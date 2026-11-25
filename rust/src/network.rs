@@ -106,10 +106,10 @@ impl Policy {
         }
     }
 
-    /// iOS builds the same desktop media path but applies no proxy policy
+    /// iOS and macOS build the same desktop media path but apply no proxy policy
     /// (the shared `configure` is a no-op there too), so the blocking client
     /// is passed through untouched.
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
     pub(crate) fn configure_blocking(
         &self,
         builder: reqwest::blocking::ClientBuilder,

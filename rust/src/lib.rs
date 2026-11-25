@@ -39,7 +39,19 @@ mod frb_generated;
 #[cfg(test)]
 mod network_proxy_tests;
 
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "ios"))]
+// 桌面播放器在 macOS 上也要能起本地回环服务，`fq_desktop_media_*` 才会被导出；
+// 漏掉 macos 时 dylib 里没有这些符号，macOS 端 FFI 一调就崩（#489）。
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "ios",
+    target_os = "macos"
+))]
 mod desktop_fetch;
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "ios"))]
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "ios",
+    target_os = "macos"
+))]
 mod desktop_media;

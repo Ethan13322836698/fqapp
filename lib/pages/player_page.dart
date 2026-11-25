@@ -1596,7 +1596,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _renditionQualityHeight = variant.qualityHeight > 0
         ? variant.qualityHeight
         : null;
-    final release = _teardownPlayer();
+    late final Future<void> release;
+    setState(() {
+      release = _teardownPlayer();
+    });
     NativePlayer? candidate;
     try {
       await release;
@@ -1852,6 +1855,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           widget.shortSeries && (_seriesDetail?.hasRelatedSeries ?? false)
           ? () => unawaited(_openRelatedSeries())
           : null,
+      loadSample: () {
+        final sample = _diagnostics.latestSample;
+        if (sample == null ||
+            widget.eps.isEmpty ||
+            sample.attempt != _loadGeneration ||
+            sample.episode != _index + 1) {
+          return null;
+        }
+        return sample;
+      },
       seriesCover: _seriesCover,
       episodeLabel: _episodeLabel,
       fillScreen: _fillScreen,
