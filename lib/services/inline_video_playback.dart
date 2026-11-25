@@ -11,6 +11,7 @@ import '../models/media_item.dart';
 import '../widgets/player/player_video_layout.dart';
 import 'api_client.dart';
 import 'app_log.dart';
+import 'bytevc2_transcode.dart';
 import 'drama_download_store.dart';
 import 'drama_mute_preferences.dart';
 import 'episode_source_cache.dart';
@@ -247,13 +248,15 @@ class InlineVideoPlayback {
   Future<Map<String, dynamic>> _content(
     String itemId, {
     bool prefetch = false,
-  }) {
+  }) async {
     final loader = contentLoader;
     if (loader != null) return loader(itemId, _tab);
     return ApiClient.instance.content(
       itemId,
       tab: _tab,
       mode: 'stream',
+      // 装了内置转码器就声明自己吃 bytevc2(#466);否则核心维持原拒绝结论。
+      transcode: await Bytevc2TranscodeService.instance.available(),
       purpose: prefetch ? PlaybackPurpose.prefetch : PlaybackPurpose.foreground,
     );
   }
@@ -807,7 +810,10 @@ class InlineVideoPlayback {
         // 离线索引读不出来就当没有缓存。
       }
     }
-    return _sources.request(episode).future;
+    return Bytevc2TranscodeService.playable(
+      episode,
+      await _sources.request(episode).future,
+    );
   }
 
   Future<EpisodeSource?> resolveListenSource(Chapter episode) async {

@@ -276,7 +276,8 @@ Remove-Item Env:FQAPP_COEXIST
 
 [工作流](.github/workflows/android-apk.yml) 固定 Flutter `3.50.0`、Rust 工具链与
 flutter_rust_bridge `2.13.0`、JDK 17、NDK `28.2.13676358` 和 CMake `3.22.1`。
-Rust 核心与 C 解密库都会在 runner 上编译。CI 设置 `FQAPP_USE_MAVEN_MIRRORS=false`
+Rust 核心、C 解密库与 `third_party/bytevc2/` 的 bytevc2 转码器都会在 runner 上编译
+(转码器是先打补丁再交叉编译 ffmpeg,源码树单独缓存,细节见该目录 `README.md`)。CI 设置 `FQAPP_USE_MAVEN_MIRRORS=false`
 使用官方 Maven 源；本地构建默认仍使用国内镜像。
 
 每次构建运行 Rust、Web 与诊断脚本测试、Flutter 静态分析与完整单元/组件测试，
@@ -910,6 +911,15 @@ App 通过 `ApiClient` 调用后端 **`/api/v1/*` 业务路由**（Rust 核心 `
 - 数据三栏：榜单、正在阅读人数、评分（含五星），按可用字段自适应列数
 - 作品 ID 行：显示当前加载所用的 ID（短剧／漫剧为系列 ID），可选中并一键复制；
   复制出的值可直接粘贴到搜索框以 `id:作品ID` 重新打开同一作品
+- 书名、作者与简介长按弹出系统选择菜单（#477）：长按后选区直接落在整段，由系统提供
+  「复制 / 全选」菜单与选择手柄，复制走平台剪贴板，应用不再自带提示条。默认整段选中
+  是刻意的：Flutter 的中文长按按单字扩展选区（实测长按书名只选中一个汉字），不主动
+  全选就只剩一个字可复制。桌面端同一套控件，鼠标拖选与 Ctrl+C 照旧。除详情页的书名、
+  作者、简介外，书评正文与回复、剧评正文也走同一套控件；带表情的评论仍由
+  `CommentEmojiText` 渲染，表情是内嵌图片，选区只覆盖文字部分，复制结果不含
+  `[微笑]` 这类占位符。短剧／漫剧系列详情（剧名与简介）与书旗详情同样适用。
+  小米传送门这类系统识屏依赖无障碍取词，客户端侧只能保证文本进入 semantics，
+  不能承诺触发
 - 演员表：短剧／漫剧显示横向演员卡片（头像、姓名、饰演角色）。数据来自 `/api/v1/series/{id}`；
   该接口失败或没有演员时不显示该区块，不影响播放。头像上游为 HEIC，解码失败时降级为姓名首字
 - 书籍简介三行折叠可展开，题材标签，`查看目录` 行与 3 章目录预览
@@ -1045,6 +1055,20 @@ HTTP 401/403 仍按设备鉴权失败处理（预取不轮换），429/5xx、传
 `source_trace_id` 可关联 Rust 的 `stream trace` 与 Dart 的 `player-quality`
 日志；旧格式原始响应仍完整透传，诊断不记录播放地址或内容密钥。
 同一播放地址只展示一档，拒绝的别名不占用后续真实流的档位名称。
+补充:上面那句「`bytevc2` 拒绝门保持不变」的前提是请求没带 `transcode=1`。带了这个
+参数即声明调用方自带 `bytevc2` 转码器,此时只放宽**选流**:原生可解码的档仍然永远
+排在前面,只有主列表与 H.265 `fallback_api` 门都被编码门拒掉之后,才用同一次请求
+已经取到的正文再扫一遍,把 `bytevc2` 档的地址交回去,并在响应里用 `codec` 字段标出
+`bytevc2`(直接可播的流该字段为空串)。这条兜底不再发请求;没有 `transcode=1` 的请求
+拿到 `CodecRejected` 与「该视频暂不支持播放」的行为一字未变。转码器、构建方式与它的
+边界见 `third_party/bytevc2/`。
+客户端侧:带转码器的安装取流时声明 `transcode=1`,拿到 `codec=bytevc2` 的档之后由
+`lib/services/bytevc2_transcode.dart` 先落盘、再用随包 ffmpeg(`third_party/bytevc2/`,
+以 `libbvc2transcode.so` 放进 jniLibs)转成明文 H.264 文件回放,播放器侧按「明文本地
+文件」处理。执行这个二进制要求安装期解包原生库(`android/app/build.gradle.kts` 的
+`packaging.jniLibs.useLegacyPackaging`),执行桥在
+`Bytevc2TranscodePlugin.kt`;没有该 `.so` 的安装(缺转码器、桌面端、旧包)不发这个
+参数,行为与之前完全一致。
 
 gzip 解压读取全部成员并保持输出上限；空首成员不会再遮住后续正文。损坏、
 截断或超过上限的后续成员不能被静默丢弃。HTTP 解压失败时仍保留损坏原文供

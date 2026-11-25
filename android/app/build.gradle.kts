@@ -98,6 +98,16 @@ android {
         }
     }
 
+    // issue #466:bytevc2 转码器是一个 ffmpeg 可执行文件(以
+    // libbvc2transcode.so 命名放进 jniLibs)。Android 只能 exec 磁盘上的真实
+    // 文件,而 AGP 默认把 .so 直接从 APK 映射、安装时不落盘,所以这里要求
+    // 安装期解包原生库(代价:APK 内 .so 改回压缩,安装后多占一份解包空间)。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     signingConfigs {
         getByName("debug") {
             // CI supplies an absolute path instead of relying on the runner's

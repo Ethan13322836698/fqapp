@@ -67,6 +67,15 @@ const REPROBE_MIN_BUDGET: Duration = Duration::from_millis(1_000);
 
 const CODEC_RETRY_BUDGET: Duration = Duration::from_millis(2_500);
 
+/// Request flag by which the caller declares it decodes `bytevc2` itself (it
+/// ships a transcoder). Without it the codec gate stays as strict as
+/// `CRIT-004` left it, so every existing caller keeps its current verdict.
+const TRANSCODE_PARAM: &str = "transcode";
+
+/// Codec name reported back for the one stream that only plays after the
+/// caller's own transcode.
+const BYTEVC2_CODEC: &str = "bytevc2";
+
 /// A rotation needs this much caller budget left to be worth attempting: a
 /// replacement registration is several round trips.
 const ROTATION_MIN_BUDGET: Duration = Duration::from_millis(1_500);
@@ -172,6 +181,9 @@ fn handle_video<'a>(ctx: &'a Ctx, params: &'a Params) -> BoxFuture<'a, ApiResult
         }
 
         let stream_mode = params.get_str("mode") == "stream";
+        // A client that transcodes `bytevc2` itself says so here; the strict
+        // gate below is what every other caller keeps.
+        let transcodes_bytevc2 = params.get_str(TRANSCODE_PARAM) == "1";
         let source_trace_id =
             STREAM_TRACE_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         let purpose =
@@ -200,6 +212,7 @@ fn handle_video<'a>(ctx: &'a Ctx, params: &'a Params) -> BoxFuture<'a, ApiResult
                 resolution_deadline,
                 work_deadline,
                 purpose,
+                transcodes_bytevc2,
             ),
         )
         .await?;
@@ -208,6 +221,7 @@ fn handle_video<'a>(ctx: &'a Ctx, params: &'a Params) -> BoxFuture<'a, ApiResult
             model: answered,
             fallback_bodies,
             resolved,
+            codec,
         } = playback;
 
         // 官方 `wp3/o1.java:301-347` 的 `isSupportShowLandIcon` 按服务端
@@ -273,7 +287,7 @@ fn handle_video<'a>(ctx: &'a Ctx, params: &'a Params) -> BoxFuture<'a, ApiResult
             .collect::<Vec<_>>()
             .join(",");
         log::info!(
-            "stream trace request={source_trace_id} purpose={purpose} event=final mode={} selected_source={} bodies=1 fallback_bodies={} quality_count={} raw_entries={} kept={} dropped=[{}] qualities=[{quality_trace}] primary_in_variants={primary_in_variants}",
+            "stream trace request={source_trace_id} purpose={purpose} event=final mode={} selected_source={} bodies=1 fallback_bodies={} quality_count={} raw_entries={} kept={} dropped=[{}] qualities=[{quality_trace}] primary_in_variants={primary_in_variants} codec={codec}",
             if stream_mode { "stream" } else { "single" },
             answered.route.tag(),
             fallback_bodies
@@ -291,6 +305,7 @@ fn handle_video<'a>(ctx: &'a Ctx, params: &'a Params) -> BoxFuture<'a, ApiResult
             "key_hex": hex::encode(&content_key),
             "video_id": video_id,
             "source_trace_id": source_trace_id,
+            "codec": codec,
             // 分集方向（官方 `VideoInfo.vertical`）：缺字段时 null，客户端
             // 据此保持旧行为（显示「全屏观看」）。
             "vertical": vertical,
@@ -309,6 +324,7 @@ fn handle_video<'a>(ctx: &'a Ctx, params: &'a Params) -> BoxFuture<'a, ApiResult
                     "video_url": local_path,
                     "video_id": video_id,
                     "source_trace_id": source_trace_id,
+                    "codec": codec,
                     "vertical": vertical,
                     "video_info": {
                         "data": {
@@ -438,6 +454,9 @@ struct ResolvedPlaybackModel {
     model: PlaybackModel,
     fallback_bodies: FallbackBodyCache,
     resolved: VideoSourceResolution,
+    /// `""` for a stream that plays as-is, [`BYTEVC2_CODEC`] for the last-resort
+    /// rendition the caller has to transcode before it can decode it.
+    codec: &'static str,
 }
 
 struct PlaybackRecovery {
@@ -829,6 +848,7 @@ async fn fetch_resolved_playback_model(
     resolution_deadline: Instant,
     work_deadline: Instant,
     purpose: &'static str,
+    transcodes_bytevc2: bool,
 ) -> ApiResult<ResolvedPlaybackModel> {
     use crate::upstream::playback_routes;
 
@@ -837,6 +857,7 @@ async fn fetch_resolved_playback_model(
     let request_id = crate::upstream::playback_trace::current().map_or(0, |trace| trace.request_id);
     let mut retry_deadline = None;
     let mut rejected = None;
+    let mut rejected_has_transcodable_source = false;
     let mut has_codec_rejection = false;
     loop {
         let deadline = retry_deadline.unwrap_or(fetch_deadline).min(work_deadline);
@@ -861,6 +882,7 @@ async fn fetch_resolved_playback_model(
                 retry_deadline
                     .unwrap_or(resolution_deadline)
                     .min(work_deadline),
+                transcodes_bytevc2,
             )
             .await;
             let answer = ResolvedPlaybackModel {
@@ -868,6 +890,7 @@ async fn fetch_resolved_playback_model(
                 model,
                 fallback_bodies,
                 resolved,
+                codec: "",
             };
             if matches!(answer.resolved, VideoSourceResolution::Found(_, _))
                 || (retry_deadline.is_none()
@@ -879,9 +902,30 @@ async fn fetch_resolved_playback_model(
                 });
                 return Ok(answer);
             }
-            has_codec_rejection |= matches!(answer.resolved, VideoSourceResolution::CodecRejected);
-            if rejected.is_none() {
+            // A failed fallback cannot erase a usable bytevc2-only primary.
+            // Keep looking for native playback, then use that primary only for
+            // callers that explicitly declared their own transcoder.
+            let primary_transcodable = transcodes_bytevc2
+                && answer.parsed.models.iter().any(|model| {
+                    model_primary_rejected_only(model)
+                        && matches!(
+                            extract_transcodable_video_model_source(model),
+                            VideoSourceResolution::Found(_, _)
+                        )
+                });
+            let codec_rejected = matches!(answer.resolved, VideoSourceResolution::CodecRejected)
+                || primary_transcodable;
+            has_codec_rejection |= codec_rejected;
+            let has_transcodable_source = transcodes_bytevc2
+                && !rejected_has_transcodable_source
+                && codec_rejected
+                && matches!(
+                    transcodable_source(&answer),
+                    VideoSourceResolution::Found(_, _)
+                );
+            if rejected.is_none() || has_transcodable_source {
                 rejected = Some(answer);
+                rejected_has_transcodable_source = has_transcodable_source;
             }
             if speculative {
                 break;
@@ -941,6 +985,15 @@ async fn fetch_resolved_playback_model(
     if let Some(mut answer) = rejected {
         if has_codec_rejection {
             answer.resolved = VideoSourceResolution::CodecRejected;
+            // 编码门到这一步已经拒绝了所有原生可解码档(主列表与 H.265 门都试过)。
+            // 声明了自带转码器的客户端还能播 `bytevc2`,所以把地址还给
+            // 它,而不是继续回拒绝;编码名一并透出,客户端据此起转码。
+            if transcodes_bytevc2 {
+                if let VideoSourceResolution::Found(url, key) = transcodable_source(&answer) {
+                    answer.resolved = VideoSourceResolution::Found(url, key);
+                    answer.codec = BYTEVC2_CODEC;
+                }
+            }
         }
         return Ok(answer);
     }
@@ -1328,6 +1381,7 @@ async fn resolve_video_source_fallback_status(
     parsed: &ParsedVideoResponse,
     fallback_bodies: Option<&FallbackBodyCache>,
     deadline: Instant,
+    transcodes_bytevc2: bool,
 ) -> FallbackResolution {
     let mut codec_rejected = false;
     let mut conclusive = true;
@@ -1345,6 +1399,7 @@ async fn resolve_video_source_fallback_status(
             &fallback_url,
             fallback_bodies,
             deadline,
+            transcodes_bytevc2,
         )
         .await
         {
@@ -1396,6 +1451,7 @@ async fn resolve_fallback_body(
     fallback_url: &str,
     fallback_bodies: Option<&FallbackBodyCache>,
     deadline: Instant,
+    transcodes_bytevc2: bool,
 ) -> FallbackBody {
     // Fetch (or reuse a cached) original door. A cached H.265 body is read
     // below, not here, so the original verdict is always the real one.
@@ -1421,6 +1477,17 @@ async fn resolve_fallback_body(
     if let VideoSourceResolution::Found(url, key) = primary_outcome {
         cache_fallback_body(fallback_bodies, Some(fallback_url), Some(original));
         return FallbackBody::Found(url, key);
+    }
+    // 自带转码器的调用方需要这个刚被编码门拒掉的正文:留在它自己的键下,
+    // 最后一次尝试就能直接从里面取档,不必二次请求。下面 H.265 门用的是
+    // 另一个键,所以这份缓存遮不住它。
+    if transcodes_bytevc2 {
+        if let Some(cache) = fallback_bodies {
+            let mut cache = cache.lock().unwrap_or_else(|error| error.into_inner());
+            cache
+                .entry(original_cache_key.clone())
+                .or_insert_with(|| original.clone());
+        }
     }
     let primary_rejected = matches!(primary_outcome, VideoSourceResolution::CodecRejected);
     let Some(alt) = h265_fallback_url(fallback_url) else {
@@ -1560,6 +1627,7 @@ async fn resolve_video_source_until(
     parsed: &ParsedVideoResponse,
     fallback_bodies: &FallbackBodyCache,
     deadline: Instant,
+    transcodes_bytevc2: bool,
 ) -> VideoSourceResolution {
     let direct = resolve_video_source_direct(parsed);
     if matches!(direct, VideoSourceResolution::Found(_, _)) {
@@ -1572,6 +1640,7 @@ async fn resolve_video_source_until(
         parsed,
         Some(fallback_bodies),
         deadline,
+        transcodes_bytevc2,
     )
     .await
     {
@@ -2502,6 +2571,99 @@ fn select_video_source<'a>(
     unresolved
 }
 
+/// Last resort for a caller that transcodes `bytevc2` itself.
+///
+/// Only reached once the strict selector has refused every tier of every body
+/// this request already holds, so it can only turn a refusal into a stream that
+/// was rejected for its codec alone, never in place of one that plays as-is. No
+/// extra request: it reads the bodies the request already fetched.
+fn transcodable_source(answer: &ResolvedPlaybackModel) -> VideoSourceResolution {
+    for model in &answer.parsed.models {
+        if let VideoSourceResolution::Found(url, key) =
+            extract_transcodable_video_model_source(model)
+        {
+            return VideoSourceResolution::Found(url, key);
+        }
+    }
+    let bodies: Vec<Arc<Map<String, Value>>> = answer
+        .fallback_bodies
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .values()
+        .cloned()
+        .collect();
+    for body in bodies {
+        if let VideoSourceResolution::Found(url, key) =
+            extract_transcodable_fallback_source(body.as_ref())
+        {
+            return VideoSourceResolution::Found(url, key);
+        }
+    }
+    VideoSourceResolution::NotFound
+}
+
+/// The model's own list read with the codec gate relaxed to `bytevc2`.
+/// URL decryption and content-key derivation use the shared entry extractor.
+fn extract_transcodable_video_model_source(model: &Map<String, Value>) -> VideoSourceResolution {
+    let key_seed = model
+        .get("key_seed")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .and_then(|s| audio_b64_decode(s).ok());
+    // CENC encrypts the media, not necessarily its URL. Plain URLs need only
+    // the entry's spade content key; encrypted URLs still require key_seed.
+    let resolve = |info: &Map<String, Value>| decrypt_variant_entry(info, key_seed.as_deref());
+    transcodable_list_source(model.get("video_list"), resolve)
+}
+
+/// A `fallback_api` body read with the codec gate relaxed to `bytevc2`.
+fn extract_transcodable_fallback_source(root: &Map<String, Value>) -> VideoSourceResolution {
+    let Some(data_root) = root
+        .get("video_info")
+        .and_then(|v| v.get("data"))
+        .and_then(|v| v.as_object())
+    else {
+        return VideoSourceResolution::NotFound;
+    };
+    let key_seed = data_root
+        .get("key_seed")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .and_then(|s| audio_b64_decode(s).ok());
+    let resolve = |info: &Map<String, Value>| decrypt_variant_entry(info, key_seed.as_deref());
+    transcodable_list_source(data_root.get("video_list"), resolve)
+}
+
+/// Picks the best `bytevc2` tier out of either `video_list` shape.
+///
+/// Ranking is [`video_quality_rank`], and only `bytevc2` entries are kept: a
+/// natively decodable tier never reaches here, because the strict pass would
+/// have returned it.
+fn transcodable_list_source(
+    video_list: Option<&Value>,
+    mut resolve: impl FnMut(&Map<String, Value>) -> Option<(String, Vec<u8>)>,
+) -> VideoSourceResolution {
+    let entries: Vec<&Map<String, Value>> = match video_list {
+        Some(Value::Object(list)) => list.values().filter_map(Value::as_object).collect(),
+        Some(Value::Array(list)) => list.iter().filter_map(Value::as_object).collect(),
+        _ => return VideoSourceResolution::NotFound,
+    };
+    let mut infos: Vec<(i64, &Map<String, Value>)> = entries
+        .into_iter()
+        .filter(|info| is_bytevc2(info))
+        .map(|info| (video_quality_rank(info), info))
+        .collect();
+    infos.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+    for (_, info) in infos {
+        if let Some((url, key)) = resolve(info) {
+            if playable_url_text(&url) {
+                return VideoSourceResolution::Found(url, key);
+            }
+        }
+    }
+    VideoSourceResolution::NotFound
+}
+
 /// Newer models keep quality under `video_meta`; older models put it on the entry.
 fn video_quality_metric(info: &Map<String, Value>, names: &[&str]) -> i64 {
     let meta = info.get("video_meta").and_then(Value::as_object);
@@ -2521,31 +2683,55 @@ fn video_quality_score(info: &Map<String, Value>) -> Option<i64> {
     // (H.266-class) has no decoder on the playback path, so a variant that
     // carries it must never win the quality race even as a last resort;
     // H.264 decodes everywhere, so it wins ties at equal quality.
-    let codec = {
-        let mut value = String::new();
-        if let Some(v) = info.get("codec_type").and_then(|v| v.as_str()) {
-            value.push_str(&v.to_lowercase());
-        }
-        if let Some(meta) = info.get("video_meta").and_then(|v| v.as_object()) {
-            if let Some(v) = meta.get("codec_type").and_then(|v| v.as_str()) {
-                value.push(' ');
-                value.push_str(&v.to_lowercase());
-            }
-        }
-        if let Some(v) = info.get("gear_des_key").and_then(|v| v.as_str()) {
+    if is_bytevc2(info) {
+        return None;
+    }
+    Some(video_quality_rank(info))
+}
+
+/// Every codec label an upstream entry carries, lowercased into one string:
+/// `codec_type` at the entry root and inside `video_meta`, plus `gear_des_key`
+/// (which spells the codec in the tier name, `bytevc2_1080p`).
+fn video_codec_text(info: &Map<String, Value>) -> String {
+    let mut value = String::new();
+    if let Some(v) = info.get("codec_type").and_then(|v| v.as_str()) {
+        value.push_str(&v.to_lowercase());
+    }
+    if let Some(meta) = info.get("video_meta").and_then(|v| v.as_object()) {
+        if let Some(v) = meta.get("codec_type").and_then(|v| v.as_str()) {
             value.push(' ');
             value.push_str(&v.to_lowercase());
         }
-        value
-    };
-    if codec.contains("bytevc2") {
-        return None;
     }
+    if let Some(v) = info.get("gear_des_key").and_then(|v| v.as_str()) {
+        value.push(' ');
+        value.push_str(&v.to_lowercase());
+    }
+    value
+}
+
+/// The ByteDance VVC tier: no playback path decodes it without a client-side
+/// transcode, so the strict gate refuses it (`CRIT-004`).
+fn is_bytevc2(info: &Map<String, Value>) -> bool {
+    video_codec_text(info).contains(BYTEVC2_CODEC)
+}
+
+/// Quality rank without the codec gate. H.264 wins ties at equal quality
+/// because it decodes everywhere; `bytevc2` loses them, because playing it
+/// costs a transcode on top of the bytes it already needs.
+fn video_quality_rank(info: &Map<String, Value>) -> i64 {
     let w = video_quality_metric(info, &["vwidth"]);
     let h = video_quality_metric(info, &["vheight"]);
     let b = video_quality_metric(info, &["bitrate", "real_bitrate"]);
-    let bonus = i64::from(codec.contains("h264") || codec.contains("avc1"));
-    Some(w * 1_000_000_000 + h * 1_000_000 + b + bonus)
+    let codec = video_codec_text(info);
+    let bonus = if codec.contains("h264") || codec.contains("avc1") {
+        1
+    } else if codec.contains(BYTEVC2_CODEC) {
+        -1
+    } else {
+        0
+    };
+    w * 1_000_000_000 + h * 1_000_000 + b + bonus
 }
 
 fn int64_from_any(v: &Value) -> i64 {
@@ -3786,21 +3972,50 @@ fn build_cenc_index(
     Ok(Some(index))
 }
 
+/// The codec an encrypted sample entry stood for, read from its `sinf/frma`.
+///
+/// `encv`/`enca` are generic wrappers: the real four-character code lives in
+/// the protection scheme's `frma`. Rewriting every `encv` to `hvc1` mislabels
+/// VVC (`vvc1`) and bytevc2 (`bvc2`) tracks, which then no longer decode.
+fn sample_entry_format(data: &[u8], entry: &Mp4Box) -> Option<[u8; 4]> {
+    let child_start = box_children_start(&entry.typ, entry.off, entry.header)?;
+    for child in iter_boxes(data, child_start, entry.off + entry.size) {
+        if child.typ != *b"sinf" {
+            continue;
+        }
+        for grand in iter_boxes(data, child.off + child.header, child.off + child.size) {
+            if grand.typ != *b"frma" || grand.off + 12 > data.len() {
+                continue;
+            }
+            let mut format = [0u8; 4];
+            format.copy_from_slice(&data[grand.off + 8..grand.off + 12]);
+            // A four-character code is printable ASCII; anything else means the
+            // box is damaged, and the caller's default is safer than copying it.
+            if format.iter().all(|b| (0x20..=0x7e).contains(b)) {
+                return Some(format);
+            }
+        }
+    }
+    None
+}
+
 /// Records the rewrites `rewrite_encrypted_sample_entries` used to apply in
-/// place (encv -> hvc1, enca -> mp4a, `sinf` blanked into a `free` box) as
-/// offset patches instead, so the file on disk keeps its original bytes.
+/// place (encv -> its `sinf/frma` codec, enca -> mp4a, `sinf` blanked into a
+/// `free` box) as offset patches instead, so the file on disk keeps its
+/// original bytes.
 fn collect_sample_entry_patches(
     data: &[u8],
     boxes: &HashMap<[u8; 4], Vec<Mp4Box>>,
     base_off: u64,
     out: &mut Vec<CencPatch>,
 ) {
-    for (typ, replacement) in [(b"encv", b"hvc1"), (b"enca", b"mp4a")] {
+    for (typ, fallback) in [(b"encv", b"hvc1"), (b"enca", b"mp4a")] {
         let Some(list) = boxes.get(typ) else {
             continue;
         };
         for b in list {
             if b.off + 8 <= data.len() {
+                let replacement = sample_entry_format(data, b).unwrap_or(*fallback);
                 out.push(CencPatch {
                     off: base_off + (b.off + 4) as u64,
                     bytes: replacement.to_vec(),

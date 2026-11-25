@@ -51,6 +51,8 @@ class MainActivity : FlutterActivity() {
         // 小米澎湃 OS 公平运行内存：收 TRIM/KILL 广播，转发 Dart 处理后回系统。
         flutterEngine.plugins.add(FairMemoryPlugin())
         flutterEngine.plugins.add(AiRequestPlugin())
+        // issue #466:bytevc2 分集转码(内置补丁 ffmpeg)的执行桥。
+        flutterEngine.plugins.add(Bytevc2TranscodePlugin())
 
         hapticsChannel =
             MethodChannel(

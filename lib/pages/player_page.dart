@@ -21,6 +21,7 @@ import '../services/player_panel_preferences.dart';
 import '../services/watched_episodes.dart';
 import 'listen_mode_page.dart';
 import '../services/episode_source_cache.dart';
+import '../services/bytevc2_transcode.dart';
 import '../services/fair_memory.dart';
 import '../services/drama_cache_preferences.dart';
 import '../services/drama_download_store.dart';
@@ -285,6 +286,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                   episode.itemId,
                   tab: '短剧',
                   mode: 'stream',
+                  // 装了内置转码器就声明自己吃 bytevc2:核心才会把这一档的
+                  // 地址给出来(#466),否则仍是原来的拒绝结论。
+                  transcode: await Bytevc2TranscodeService.instance.available(),
                   purpose: prefetch
                       ? PlaybackPurpose.prefetch
                       : PlaybackPurpose.foreground,
@@ -1968,7 +1972,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   Future<EpisodeSource?> _resolveSource(Chapter episode) async {
     final offline = await _offlineSource(episode);
     if (offline != null) return offline;
-    return _sources.request(episode).future;
+    return Bytevc2TranscodeService.playable(
+      episode,
+      await _sources.request(episode).future,
+    );
   }
 
   /// 听视频（官方 `jm3.d0.y()` 的听书模式页语义）：视频页暂停，推入独立

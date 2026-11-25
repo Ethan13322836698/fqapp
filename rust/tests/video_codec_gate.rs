@@ -247,7 +247,8 @@ async fn fallback_rejection_requires_a_conclusive_codec_decision() {
         "fallback_api": "https://example.invalid/fallback",
         "video_list": [{
             "main_url": "https://example.invalid/original.mp4",
-            "encrypt_info": {"encrypt": true}
+            "video_meta": {"codec_type": "bytevc2"},
+            "encrypt_info": {"encrypt": true, "spade_a": SPADE_A}
         }]
     });
     let upstream = MockUpstream::start(move |req| {
@@ -264,6 +265,13 @@ async fn fallback_rejection_requires_a_conclusive_codec_decision() {
         assert_eq!(status, 500, "{mode}: {body}");
         assert_eq!(body["error"], "视频取流失败，请稍后重试", "{mode}: {body}");
     }
+    // The URL is clear even though the media is CENC-encrypted. A failed
+    // fallback must preserve it for a caller that can transcode bytevc2.
+    let (status, body) = request_video(&server, "mode=stream&transcode=1").await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["video_url"], "https://example.invalid/original.mp4");
+    assert_eq!(body["key_hex"], KEY_HEX);
+    assert_eq!(body["codec"], "bytevc2");
 }
 
 #[tokio::test]

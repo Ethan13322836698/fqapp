@@ -299,7 +299,10 @@ extension _PlayerPagePreload on _PlayerPageState {
             : null;
       }
     }
-    return (online, qualityHeight);
+    return (
+      await Bytevc2TranscodeService.playable(episode, online),
+      qualityHeight,
+    );
   }
 }
 

@@ -42,12 +42,18 @@ class EpisodeSource {
   /// Backend request sequence used to correlate the Rust source trace.
   final String? sourceTraceId;
 
+  /// 这一档的流编码,由 Rust 核心标注(issue #466)。`''` = 正常可解码;
+  /// `bytevc2` = 只有自带转码器的客户端能播(核心只在请求带 `transcode=1`
+  /// 时才可能回这个值)。判定与转码见 `bytevc2_transcode.dart`。
+  final String codec;
+
   const EpisodeSource(
     this.url, [
     this.keyHex = '',
     this.variants = const [],
     this.vertical,
     this.sourceTraceId,
+    this.codec = '',
   ]);
 
   EpisodeSource withVariant(EpisodeVariant variant) => EpisodeSource(
@@ -56,6 +62,7 @@ class EpisodeSource {
     variants,
     vertical,
     sourceTraceId,
+    codec,
   );
 
   factory EpisodeSource.fromResponse(Map<String, dynamic> response) {
@@ -113,6 +120,7 @@ class EpisodeSource {
       variants,
       _verticalOf(data['vertical'] ?? response['vertical']),
       traceId.isEmpty ? null : traceId,
+      '${data['codec'] ?? response['codec'] ?? ''}'.trim(),
     );
   }
 }

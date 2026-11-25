@@ -14,6 +14,7 @@ on:
       - 'lib/**'
       - 'android/**'
       - 'native/**'
+      - 'third_party/bytevc2/**'
       - 'rust/**'
       - 'assets/**'
       - 'pubspec.yaml'
@@ -240,6 +241,17 @@ jobs:
           path: /usr/local/lib/android/sdk/cmake/${{ env.CMAKE_VERSION }}
           key: android-cmake-${{ env.CMAKE_VERSION }}-${{ runner.os }}
 
+      # 打 BVC2 补丁 + 交叉编译 x264/ffmpeg 是这一轮里最慢的一步。缓存里存的是
+      # 解压后的源码树和自己的目标文件,所以 key 必须跟着脚本与补丁走:补丁改了
+      # 却复用旧树,build.sh 的 `grep -q bvc2` 会认为"已经打过补丁"而跳过,
+      # 产物就静静停在旧解码器上。
+      - name: Cache the bundled bytevc2 transcoder build
+        id: bytevc2-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: app/build/bytevc2
+          key: bytevc2-${{ runner.os }}-${{ hashFiles('app/third_party/bytevc2/build.sh', 'app/third_party/bytevc2/0001-add-bvc2-decoder.patch') }}
+
       - name: Install the missing Android SDK components
         run: |
           sdkmanager_bin="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
@@ -345,6 +357,24 @@ jobs:
             readelf_bin="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
             "$readelf_bin" -l "$so" > "build/ci-artifacts/rust-core-program-headers-$abi.txt"
             node scripts/check_native_alignment.cjs "$so"
+          done
+
+      - name: Build the bundled bytevc2 transcoder (ARM64 + ARMv7)
+        run: |
+          # 上游部分短剧只给 bytevc2(字节私有 H.266 外壳)码流,系统解码器
+          # 一律放不出来(issue #466)。这里随包打一个带 BVC2 解码补丁的
+          # ffmpeg,以 lib*.so 命名放进 jniLibs,运行期由应用自己 exec 成明文
+          # H.264。jniLibs 是 gitignored 的:漏了这一步,打出来的包就没有
+          # 转码器,客户端会静默退回"该集暂不支持播放",而不是构建失败。
+          bash third_party/bytevc2/build.sh android arm64
+          bash third_party/bytevc2/build.sh android armv7
+          for abi in arm64-v8a armeabi-v7a; do
+            so="android/app/src/main/jniLibs/$abi/libbvc2transcode.so"
+            test -s "$so"
+            # configure 不校验 --enable-decoder 的取值:补丁没生效时构建照样
+            # 成功,只有运行期才露馅(build.sh 里有一道同款守卫)。这里再对
+            # 产物本身兜一层——编码器名字符串在,解码器才真的编进去了。
+            grep -q bvc2 "$so"
           done
 
       # A contributor or fork has no access to the release keystore secrets, and

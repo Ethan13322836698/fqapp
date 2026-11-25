@@ -529,11 +529,15 @@ class ApiClient {
     String? toneId,
     String? mode,
     String? bookId,
+    bool transcode = false,
   }) {
     final id = Uri.encodeComponent(itemId);
     return switch (tab) {
       '漫画' => _url('/api/v1/manga/$id', {'book_id': ?bookId}),
-      '短剧' || '漫剧' => _url('/api/v1/videos/$id', {'mode': ?mode}),
+      '短剧' || '漫剧' => _url('/api/v1/videos/$id', {
+        'mode': ?mode,
+        if (transcode) 'transcode': '1',
+      }),
       _ => _url('/api/v1/chapters/$id', {'tone_id': ?toneId}),
     };
   }
@@ -544,9 +548,16 @@ class ApiClient {
     String? toneId,
     String? mode,
     PlaybackPurpose? purpose,
+    bool transcode = false,
   }) async {
     final r = await _get(
-      _contentUrl(itemId, tab: tab, toneId: toneId, mode: mode),
+      _contentUrl(
+        itemId,
+        tab: tab,
+        toneId: toneId,
+        mode: mode,
+        transcode: transcode,
+      ),
       playbackPurpose: (tab == '短剧' || tab == '漫剧') ? purpose : null,
     );
     return _decodeAsync(r);
@@ -1055,17 +1066,23 @@ class ApiClient {
   }
 
   /// Replies to one review. All three ids are required by the backend.
+  ///
+  /// [commentSource] 是上游的评论命名空间：书评 `501`、段评 `503`（官方 7.0.9.32
+  /// 抓包）。传错空间不会报错，只会拿到空的 `reply_list` 和 `total=0`，看起来就像
+  /// 这条评论没有回复。
   Future<CommentReplyPage> commentReplies(
     String bookId,
     String commentId, {
     required String groupId,
-    int count = 10,
+    int commentSource = 501,
+    int count = 20,
   }) async {
     final response = await _get(
       _url('/api/v1/comments/${Uri.encodeComponent(commentId)}/replies', {
         'comment_id': commentId,
         'group_id': groupId,
         'book_id': bookId,
+        'comment_source': '$commentSource',
         'count': '$count',
       }),
       method: 'POST',
