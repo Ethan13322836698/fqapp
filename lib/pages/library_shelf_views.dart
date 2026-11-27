@@ -34,7 +34,7 @@ mixin _LibraryShelfViews on _LibraryShelfChrome {
           style.pageGutter,
           isWindowsDesktop ? 24.0 : DockLayout.scrollPaddingOf(context),
         ),
-        maxContentWidth: isWindowsDesktop
+        maxContentWidth: isWindowsDesktop || TabletLayout.activeOf(context)
             ? (mode == BookCollectionMode.list ? 1080.0 : 1680.0)
             : null,
         storageKey: PageStorageKey('shelf-$_tab'),

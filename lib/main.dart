@@ -1,3 +1,5 @@
+import 'services/tablet_preferences.dart';
+import 'widgets/tablet_layout.dart';
 import 'services/audio_downloader.dart';
 import 'widgets/desktop_app_frame.dart';
 import 'widgets/desktop_shell_scope.dart';
@@ -259,6 +261,7 @@ Future<void> _loadLocalData() async {
     // 不该排在并行段之后串行等。prefs 读失败即启动失败(失败页 + 重试);
     // 样式 store 是可选外观偏好,内部吞错,读失败只回落默认外观(#421)。
     spFuture,
+    optional(() async => TabletPreferences.instance.load(await spFuture)),
     themeStyleFuture,
   ]);
   unawaited(optional(AudioPreferences.instance.load));
@@ -324,9 +327,7 @@ Future<void> _loadLocalData() async {
   oledModeNotifier.value = sp.getBool(oledModeKey) ?? false;
   // 播放页布局（短剧上下分屏/左右分栏）同样是可选偏好：读不到退化为
   // 沉浸式，不阻塞启动。
-  PlayerLayoutPreferences.mode.value = PlayerLayoutPreferences.decode(
-    sp.getString(PlayerLayoutPreferences.key),
-  );
+  PlayerLayoutPreferences.load(sp.getString(PlayerLayoutPreferences.key));
   // 短剧分区上次停在哪个频道（官方 SP `last_tab_type`）：同样只读一次，
   // 页面在 initState 同步取用，首帧不会先闪「推荐」。
   DramaChannelPreferences.load(sp);
@@ -420,7 +421,10 @@ class _FqAppState extends State<FqApp> {
                         key: _audioScopeKey,
                         navigatorKey: _navigatorKey,
                         recentListen: _loadRecentListenWhenReady,
-                        child: child ?? const SizedBox.shrink(),
+                        child: TabletLayout(
+                          preference: TabletPreferences.instance.enabled,
+                          child: child ?? const SizedBox.shrink(),
+                        ),
                       );
                       // One live presentation scope above the root Navigator,
                       // so pushed routes, nested Navigators and every Overlay
@@ -1011,7 +1015,13 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
         },
       );
     }
-    AudioFloatingRouteScope.configure(context, hidden: _index == 1);
+    final tablet = TabletLayout.activeOf(context);
+    final showDrama = DramaFeaturePreferences.instance.enabled.value;
+    AudioFloatingRouteScope.configure(
+      context,
+      hidden: _index == 1,
+      bottomInset: tablet ? 0 : null,
+    );
     final palette = HomePalette.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isDramaTab = _index == 1;
@@ -1052,53 +1062,68 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
                 ),
         // 底栏滚动自动隐藏（对齐 PiliPlus）：把用户拖动方向递送给控制器。
         // 弹层与上层路由不在本壳层子树、通知不会经过这里，不会被误触发。
-        child: NotificationListener<UserScrollNotification>(
-          onNotification: _onShellUserScroll,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final width = constraints.maxWidth;
-              return AnimatedBuilder(
-                animation: _pageMotion,
-                builder: (context, _) {
-                  final page = _currentPage();
-                  return Stack(
-                    key: const ValueKey('root-page-stack'),
-                    fit: StackFit.expand,
-                    children: [
-                      for (var i = 0; i < 4; i++)
-                        if (_visitedTabs.contains(i))
-                          KeyedSubtree(
-                            key: ValueKey('root-tab-$i'),
-                            child: Offstage(
-                              key: ValueKey('root-tab-offstage-$i'),
-                              // 静止时只显示当前页；预挂载帧额外显示目标页
-                              // （Transform 放在屏外，完成 layout 但不显示）；
-                              // 动画中显示视口范围内的页（旧页滑出 + 新页滑入）。
-                              offstage:
-                                  !(i == _index ||
-                                      i == _premount ||
-                                      (_pageMotion.isAnimating &&
-                                          (i - page).abs() < 1)),
-                              child: Transform.translate(
-                                offset: Offset((i - page) * width, 0),
-                                // RepaintBoundary 把页面内容缓存为独立图层：
-                                // 动画期间 Transform 只移动图层（GPU 合成），
-                                // 不触发页面内容的逐帧 repaint。
-                                child: RepaintBoundary(
-                                  child: TickerMode(
-                                    enabled: i == _index,
-                                    child: _tabChild(i),
+        child: Row(
+          children: [
+            if (tablet)
+              TabletNavigation(
+                selected: _index,
+                onSelected: _selectTab,
+                showDrama: showDrama,
+              ),
+            Expanded(
+              key: const ValueKey('root-tab-content'),
+              child: ClipRect(
+                child: NotificationListener<UserScrollNotification>(
+                  onNotification: _onShellUserScroll,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.maxWidth;
+                      return AnimatedBuilder(
+                        animation: _pageMotion,
+                        builder: (context, _) {
+                          final page = _currentPage();
+                          return Stack(
+                            key: const ValueKey('root-page-stack'),
+                            fit: StackFit.expand,
+                            children: [
+                              for (var i = 0; i < 4; i++)
+                                if (_visitedTabs.contains(i))
+                                  KeyedSubtree(
+                                    key: ValueKey('root-tab-$i'),
+                                    child: Offstage(
+                                      key: ValueKey('root-tab-offstage-$i'),
+                                      // 静止时只显示当前页；预挂载帧额外显示目标页
+                                      // （Transform 放在屏外，完成 layout 但不显示）；
+                                      // 动画中显示视口范围内的页（旧页滑出 + 新页滑入）。
+                                      offstage:
+                                          !(i == _index ||
+                                              i == _premount ||
+                                              (_pageMotion.isAnimating &&
+                                                  (i - page).abs() < 1)),
+                                      child: Transform.translate(
+                                        offset: Offset((i - page) * width, 0),
+                                        // RepaintBoundary 把页面内容缓存为独立图层：
+                                        // 动画期间 Transform 只移动图层（GPU 合成），
+                                        // 不触发页面内容的逐帧 repaint。
+                                        child: RepaintBoundary(
+                                          child: TickerMode(
+                                            enabled: i == _index,
+                                            child: _tabChild(i),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                            ),
-                          ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
       // 上游 Wenku8 GlassDock：胶囊、拖动预览和液态玻璃选中区；短剧视频流
@@ -1107,19 +1132,23 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
       // DockAutoHideSlide 把底栏包成“下滚收起 / 上滑露出”（PiliPlus 同参：
       // 500ms 强调三段曲线）。收起只平移不改变槽位高度（extendBody 下内容
       // 本来就画在 dock 下方），滚动位置与安全区都不因它变化。
-      bottomNavigationBar: DockAutoHideSlide(
-        hide: _dockAutoHide,
-        // 墨水屏已通过 disabledProbe 完全禁用收起；此处只保证进入 eink 时
-        // reveal 回正的过渡零帧落位，不跑 500ms 残影。
-        reduceMotion: einkModeNotifier.value,
-        child: ShellDock(
-          selectedIndex: _index,
-          onSelected: _selectTab,
-          overVideo: dramaOnVideo,
-          staticMaterial: shellDockStaticMaterial(overVideo: dramaOnVideo),
-          showDrama: DramaFeaturePreferences.instance.enabled.value,
-        ),
-      ),
+      bottomNavigationBar: tablet
+          ? null
+          : DockAutoHideSlide(
+              hide: _dockAutoHide,
+              // 墨水屏已通过 disabledProbe 完全禁用收起；此处只保证进入 eink 时
+              // reveal 回正的过渡零帧落位，不跑 500ms 残影。
+              reduceMotion: einkModeNotifier.value,
+              child: ShellDock(
+                selectedIndex: _index,
+                onSelected: _selectTab,
+                overVideo: dramaOnVideo,
+                staticMaterial: shellDockStaticMaterial(
+                  overVideo: dramaOnVideo,
+                ),
+                showDrama: DramaFeaturePreferences.instance.enabled.value,
+              ),
+            ),
     );
   }
 

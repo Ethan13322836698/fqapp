@@ -1,3 +1,4 @@
+import '../widgets/tablet_layout.dart';
 import 'package:flutter/gestures.dart';
 
 import '../services/desktop_platform.dart';

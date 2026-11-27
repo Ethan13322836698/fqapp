@@ -1,3 +1,4 @@
+import '../widgets/tablet_layout.dart';
 import '../services/desktop_platform.dart';
 import '../services/audio_floating_routes.dart';
 import '../widgets/desktop_chapter_sidebar.dart';
@@ -198,7 +199,13 @@ class _ComicReaderPageState extends State<ComicReaderPage>
 
   @override
   Widget build(BuildContext context) {
-    if (!isWindowsDesktop) return _buildSurface(context);
+    if (!isWindowsDesktop) {
+      return TabletLayout.centered(
+        context,
+        maxWidth: 920,
+        child: _buildSurface(context),
+      );
+    }
     final palette = HomePalette.of(context);
     return ValueListenableBuilder<bool>(
       valueListenable: DesktopPlatform.fullscreen,

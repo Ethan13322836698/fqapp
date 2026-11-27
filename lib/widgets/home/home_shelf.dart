@@ -1,3 +1,4 @@
+import '../tablet_layout.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../services/app_style_tokens.dart';
@@ -32,7 +33,8 @@ const double homeSectionGap = 20;
 /// Bottom clearance above the floating navigation bar: bar 64 + its 8dp
 /// padding + the system inset + 24dp of breathing room (desktop shell omits
 /// the bottom bar).
-double homeBottomClearance(BuildContext context) => isWindowsDesktop
+double homeBottomClearance(BuildContext context) =>
+    isWindowsDesktop || TabletLayout.activeOf(context)
     ? MediaQuery.paddingOf(context).bottom + 24
     : 64 + 8 + MediaQuery.paddingOf(context).bottom + 24;
 

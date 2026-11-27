@@ -1,3 +1,4 @@
+import '../widgets/tablet_layout.dart';
 import '../services/desktop_platform.dart';
 import '../services/linux_platform.dart';
 import '../widgets/desktop_chapter_sidebar.dart';
@@ -713,6 +714,7 @@ class _AudioPageState extends State<AudioPage> {
     final related = c._extras.related.isEmpty ? null : c._extras.related.first;
     // Windows 桌面端用独立版式；它只需要 tones，上面这些局部变量先算好并不吃亏。
     if (isWindowsDesktop ||
+        TabletLayout.activeOf(context, minWidth: 900) ||
         (isLinuxDesktop && MediaQuery.sizeOf(context).width >= 700)) {
       return _desktopAudio(palette, chapter, tones);
     }
@@ -754,165 +756,172 @@ class _AudioPageState extends State<AudioPage> {
     List<AudioTone> tones,
   ) => Scaffold(
     backgroundColor: palette.canvas,
-    body: Column(
-      children: [
-        AudioTopBar(
-          onCollapse: () => Navigator.maybePop(context),
-          onMore: _showMore,
-        ),
-        Expanded(
-          child: Row(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 600),
+    body: SafeArea(
+      child: Column(
+        children: [
+          AudioTopBar(
+            onCollapse: () => Navigator.maybePop(context),
+            onMore: _showMore,
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 600),
+                        child: Column(
+                          children: [
+                            AudioBookCard(
+                              cover: c._cover,
+                              bookTitle: c._title,
+                              chapterTitle: chapter.title,
+                              onSwitch: _showVoices,
+                              onOpenBook: _showCatalog,
+                            ),
+                            const SizedBox(height: 20),
+                            _statusLine(palette),
+                            if (c._excerpt.isNotEmpty)
+                              AudioExcerpt(
+                                text: c._excerpt,
+                                onTap: _showExcerpt,
+                              ),
+                            const SizedBox(height: 12),
+                            AudioIconRow(actions: _iconActions()),
+                            const SizedBox(height: 24),
+                            AudioToneSection(
+                              title: c._mode == 'narrator' ? '真人讲书' : '智能朗读',
+                              tones: tones,
+                              selectedId: c._hasFixedTone
+                                  ? c._bookId
+                                  : c._toneId,
+                              currentChapterTitle: chapter.title,
+                              onSelect: _onToneSelected,
+                              onReadAlong: _showReadAlong,
+                              onShowVoices: c._switchingVersion
+                                  ? null
+                                  : _showVoices,
+                            ),
+                            if (c._extras.related.isNotEmpty)
+                              AudioRelatedRow(
+                                works: c._extras.related,
+                                onTap: _openRelated,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: MediaQuery.sizeOf(context).width >= 1200 ? 360 : 280,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: palette.surface,
+                      border: Border(left: BorderSide(color: palette.line)),
+                    ),
+                    child: DefaultTabController(
+                      length: 2,
                       child: Column(
                         children: [
-                          AudioBookCard(
-                            cover: c._cover,
-                            bookTitle: c._title,
-                            chapterTitle: chapter.title,
-                            onSwitch: _showVoices,
-                            onOpenBook: _showCatalog,
+                          TabBar(
+                            labelColor: palette.ink,
+                            unselectedLabelColor: palette.muted,
+                            indicatorColor: palette.eink
+                                ? palette.ink
+                                : HomePalette.accent,
+                            dividerColor: palette.line,
+                            tabs: const [
+                              Tab(text: '章节目录'),
+                              Tab(text: '同步字幕'),
+                            ],
                           ),
-                          const SizedBox(height: 20),
-                          _statusLine(palette),
-                          if (c._excerpt.isNotEmpty)
-                            AudioExcerpt(text: c._excerpt, onTap: _showExcerpt),
-                          const SizedBox(height: 12),
-                          AudioIconRow(actions: _iconActions()),
-                          const SizedBox(height: 24),
-                          AudioToneSection(
-                            title: c._mode == 'narrator' ? '真人讲书' : '智能朗读',
-                            tones: tones,
-                            selectedId: c._hasFixedTone ? c._bookId : c._toneId,
-                            currentChapterTitle: chapter.title,
-                            onSelect: _onToneSelected,
-                            onReadAlong: _showReadAlong,
-                            onShowVoices: c._switchingVersion
-                                ? null
-                                : _showVoices,
-                          ),
-                          if (c._extras.related.isNotEmpty)
-                            AudioRelatedRow(
-                              works: c._extras.related,
-                              onTap: _openRelated,
+                          Expanded(
+                            child: TabBarView(
+                              children: [
+                                DesktopChapterSidebar(
+                                  width: double.infinity,
+                                  showBorder: false,
+                                  backgroundColor: palette.surface,
+                                  chapters: c._chapters,
+                                  currentIndex: c._index,
+                                  onSelected: (index) =>
+                                      unawaited(c._openChapter(index)),
+                                ),
+                                ValueListenableBuilder<Duration>(
+                                  valueListenable: c._position,
+                                  builder: (context, position, _) {
+                                    final track = c._subtitles;
+                                    if (track.isEmpty) {
+                                      // 官方两种空态都走 `setStatusText`，文案统一。
+                                      return const Center(
+                                        child: Text(
+                                          '本章暂无同步字幕',
+                                          key: Key('audio-subtitle-page-empty'),
+                                        ),
+                                      );
+                                    }
+                                    // 高亮与自动滚动都在 `AudioSubtitleList`
+                                    // 里：跟着朗读进度滚到当前句并标出它。
+                                    return AudioSubtitleList(
+                                      track: track,
+                                      active: track.indexAt(position),
+                                      onSeek: c._ready
+                                          ? (startMs) => c._seekTo(
+                                              Duration(milliseconds: startMs),
+                                            )
+                                          : null,
+                                    );
+                                  },
+                                ),
+                              ],
                             ),
+                          ),
                         ],
                       ),
                     ),
                   ),
                 ),
-              ),
-              SizedBox(
-                width: MediaQuery.sizeOf(context).width >= 1200 ? 360 : 280,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: palette.surface,
-                    border: Border(left: BorderSide(color: palette.line)),
-                  ),
-                  child: DefaultTabController(
-                    length: 2,
-                    child: Column(
-                      children: [
-                        TabBar(
-                          labelColor: palette.ink,
-                          unselectedLabelColor: palette.muted,
-                          indicatorColor: palette.eink
-                              ? palette.ink
-                              : HomePalette.accent,
-                          dividerColor: palette.line,
-                          tabs: const [
-                            Tab(text: '章节目录'),
-                            Tab(text: '同步字幕'),
-                          ],
-                        ),
-                        Expanded(
-                          child: TabBarView(
-                            children: [
-                              DesktopChapterSidebar(
-                                width: double.infinity,
-                                showBorder: false,
-                                backgroundColor: palette.surface,
-                                chapters: c._chapters,
-                                currentIndex: c._index,
-                                onSelected: (index) =>
-                                    unawaited(c._openChapter(index)),
-                              ),
-                              ValueListenableBuilder<Duration>(
-                                valueListenable: c._position,
-                                builder: (context, position, _) {
-                                  final track = c._subtitles;
-                                  if (track.isEmpty) {
-                                    // 官方两种空态都走 `setStatusText`，文案统一。
-                                    return const Center(
-                                      child: Text(
-                                        '本章暂无同步字幕',
-                                        key: Key('audio-subtitle-page-empty'),
-                                      ),
-                                    );
-                                  }
-                                  // 高亮与自动滚动都在 `AudioSubtitleList`
-                                  // 里：跟着朗读进度滚到当前句并标出它。
-                                  return AudioSubtitleList(
-                                    track: track,
-                                    active: track.indexAt(position),
-                                    onSeek: c._ready
-                                        ? (startMs) => c._seekTo(
-                                            Duration(milliseconds: startMs),
-                                          )
-                                        : null,
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Material(
-          color: palette.surface,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(32, 8, 32, 12),
-            child: Column(
-              children: [
-                ValueListenableBuilder<Duration>(
-                  valueListenable: c._position,
-                  builder: (context, position, _) => AudioProgressRow(
-                    position: position,
-                    duration: c._duration,
-                    preview: c._seekPreview.value,
-                    enabled: c._ready,
-                    onChanged: c._previewSeek,
-                    onChangeEnd: (value) =>
-                        c._seekTo(Duration(milliseconds: value.round())),
-                    onBack15: c._ready
-                        ? () => c._seekTo(
-                            c._position.value - const Duration(seconds: 15),
-                          )
-                        : null,
-                    onForward15: c._ready
-                        ? () => c._seekTo(
-                            c._position.value + const Duration(seconds: 15),
-                          )
-                        : null,
-                  ),
-                ),
-                _transport(),
               ],
             ),
           ),
-        ),
-      ],
+          Material(
+            color: palette.surface,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(32, 8, 32, 12),
+              child: Column(
+                children: [
+                  ValueListenableBuilder<Duration>(
+                    valueListenable: c._position,
+                    builder: (context, position, _) => AudioProgressRow(
+                      position: position,
+                      duration: c._duration,
+                      preview: c._seekPreview.value,
+                      enabled: c._ready,
+                      onChanged: c._previewSeek,
+                      onChangeEnd: (value) =>
+                          c._seekTo(Duration(milliseconds: value.round())),
+                      onBack15: c._ready
+                          ? () => c._seekTo(
+                              c._position.value - const Duration(seconds: 15),
+                            )
+                          : null,
+                      onForward15: c._ready
+                          ? () => c._seekTo(
+                              c._position.value + const Duration(seconds: 15),
+                            )
+                          : null,
+                    ),
+                  ),
+                  _transport(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 

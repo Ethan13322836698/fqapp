@@ -26,6 +26,8 @@ import 'package:fqapp/services/library_store.dart';
 import 'package:fqapp/services/shelf_group_store.dart';
 import 'package:fqapp/services/shelf_store.dart';
 import 'package:fqapp/services/shelf_view_store.dart';
+import 'package:fqapp/services/tablet_preferences.dart';
+import 'package:fqapp/widgets/tablet_layout.dart';
 import 'package:fqapp/widgets/app_ui/app_ui_scope.dart';
 import 'package:fqapp/widgets/classic_shell_dock.dart';
 import 'package:fqapp/widgets/desktop_app_frame.dart';
@@ -72,6 +74,52 @@ void main() {
     if (hiveDirectory.existsSync()) {
       await hiveDirectory.delete(recursive: true);
     }
+  });
+
+  testWidgets('tablet navigation follows the preference and window width', (
+    tester,
+  ) async {
+    final preferences = TabletPreferences.instance;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1024, 768);
+    final store = AppThemeStyleStore();
+    addTearDown(store.dispose);
+    addTearDown(() {
+      preferences.enabled.value = false;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      _withFakeHome(
+        FqApp(
+          initializer: _isolatedStartup,
+          backendStarter: () async {},
+          styleStore: store,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final shell = tester.state(find.byType(RootShell));
+    expect(find.byType(ShellDock), findsOneWidget);
+
+    await preferences.setEnabled(true);
+    await tester.pumpAndSettle();
+    expect(find.byType(ShellDock), findsNothing);
+    final rail = find.byType(TabletNavigation);
+    expect(rail, findsOneWidget);
+    await tester.tap(find.descendant(of: rail, matching: find.text('书架')));
+    await tester.pumpAndSettle();
+    expect(rootTab(tester), 2);
+    expect(tester.takeException(), isNull);
+
+    tester.view.physicalSize = const Size(500, 768);
+    await tester.pumpAndSettle();
+    expect(rail, findsNothing);
+    expect(find.byType(ShellDock), findsOneWidget);
+    expect(rootTab(tester), 2);
+    expect(identical(tester.state(find.byType(RootShell)), shell), isTrue);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('real shell, tabs and reader keep state across style switches', (

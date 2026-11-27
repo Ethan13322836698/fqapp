@@ -1,3 +1,4 @@
+import '../tablet_layout.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -38,7 +39,7 @@ class ArchiveFeaturePage extends StatelessWidget {
       title: ArchiveRouteTitle(title: title, code: code),
       actions: actions,
     ),
-    child: child,
+    child: TabletLayout.centered(context, maxWidth: 920, child: child),
   );
 }
 

@@ -1,3 +1,4 @@
+import '../widgets/tablet_layout.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -272,7 +273,11 @@ class _RankPageState extends State<RankPage> {
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: isWindowsDesktop ? 1240 : 840),
+          constraints: BoxConstraints(
+            maxWidth: isWindowsDesktop || TabletLayout.activeOf(context)
+                ? 1240
+                : 840,
+          ),
           child: Column(
             children: [
               if (_catalog.tabs.isNotEmpty)
@@ -354,7 +359,8 @@ class _RankPageState extends State<RankPage> {
       },
       child: LayoutBuilder(
         builder: (context, constraints) {
-          if (isWindowsDesktop && constraints.maxWidth >= 880) {
+          if ((isWindowsDesktop || TabletLayout.activeOf(context)) &&
+              constraints.maxWidth >= 880) {
             final scaler = MediaQuery.textScalerOf(context);
             final rowExtent = math.max(
               108.0,

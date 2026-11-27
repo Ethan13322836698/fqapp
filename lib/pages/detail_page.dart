@@ -1,3 +1,4 @@
+import '../widgets/tablet_layout.dart';
 import '../widgets/desktop_chapter_sidebar.dart';
 import '../services/desktop_platform.dart';
 import 'dart:async';
@@ -675,7 +676,9 @@ class _DetailPageState extends State<DetailPage> {
     final style = AppUiScope.of(context);
     _anchors.noteLayoutStyle(style);
     final classic = style == AppThemeStyle.classic;
-    final desktop = isWindowsDesktop && MediaQuery.sizeOf(context).width >= 700;
+    final desktop =
+        (isWindowsDesktop && MediaQuery.sizeOf(context).width >= 700) ||
+        TabletLayout.activeOf(context, minWidth: 840);
     final overlay =
         (palette.dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
             .copyWith(
@@ -690,6 +693,9 @@ class _DetailPageState extends State<DetailPage> {
         value: overlay,
         child: Scaffold(
           backgroundColor: palette.canvas,
+          appBar: isWindowsDesktop
+              ? null
+              : AppBar(title: Text(widget.item.title)),
           body: _desktopBody(palette),
         ),
       );

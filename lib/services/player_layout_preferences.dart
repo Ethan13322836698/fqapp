@@ -59,12 +59,23 @@ class PlayerLayoutPreferences {
   static final ValueNotifier<PlayerLayoutMode> mode =
       ValueNotifier<PlayerLayoutMode>(PlayerLayoutMode.immersive);
 
+  static final hasSavedMode = ValueNotifier(false);
+
   static PlayerLayoutMode decode(String? value) =>
       PlayerLayoutMode.fromStorage(value);
+
+  static void load(String? value) {
+    mode.value = decode(value);
+    hasSavedMode.value = PlayerLayoutMode.values.any(
+      (option) => option.storageName == value,
+    );
+  }
 
   /// 写入偏好；返回 false 表示平台通道没有确认保存。
   static Future<bool> save(PlayerLayoutMode value) async {
     final sp = await SharedPreferences.getInstance();
-    return sp.setString(key, value.storageName);
+    final saved = await sp.setString(key, value.storageName);
+    if (saved) hasSavedMode.value = true;
+    return saved;
   }
 }

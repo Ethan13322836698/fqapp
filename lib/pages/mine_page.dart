@@ -1,3 +1,4 @@
+import '../widgets/tablet_layout.dart';
 import 'dart:async';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -124,7 +125,7 @@ class _MinePageState extends State<MinePage> {
     if (style.isClassic) {
       final palette = HomePalette.of(context);
       final today = DateUtils.dateOnly(DateTime.now());
-      if (isWindowsDesktop) {
+      if (isWindowsDesktop || TabletLayout.activeOf(context)) {
         return Scaffold(
           backgroundColor: palette.canvas,
           appBar: inDesktopFrame
@@ -316,7 +317,7 @@ class _MinePageState extends State<MinePage> {
         ),
       );
     }
-    if (isWindowsDesktop) {
+    if (isWindowsDesktop || TabletLayout.activeOf(context)) {
       final palette = HomePalette.of(context);
       final statsEntry = FeatureEntry(
         key: const ValueKey('mine-statistics'),

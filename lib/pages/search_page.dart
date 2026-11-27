@@ -1,3 +1,4 @@
+import '../widgets/tablet_layout.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -1102,7 +1103,9 @@ class _SearchPageState extends State<SearchPage> {
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: isWindowsDesktop ? 1180 : 840,
+                maxWidth: isWindowsDesktop || TabletLayout.activeOf(context)
+                    ? 1180
+                    : 840,
               ),
               // Upstream pads the whole search plane by the tab height, so
               // the scroll viewport starts below the search capsule and rows
@@ -1130,7 +1133,11 @@ class _SearchPageState extends State<SearchPage> {
   Widget _header(BuildContext context) => Align(
     alignment: Alignment.topCenter,
     child: ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: isWindowsDesktop ? 1180 : 840),
+      constraints: BoxConstraints(
+        maxWidth: isWindowsDesktop || TabletLayout.activeOf(context)
+            ? 1180
+            : 840,
+      ),
       child: Column(
         children: [
           SizedBox(
@@ -1740,7 +1747,9 @@ class _SearchPageState extends State<SearchPage> {
               // 与首页同一个阅读宽度：非 Windows 压到 840dp 并居中。
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: isWindowsDesktop ? 1180 : 840,
+                  maxWidth: isWindowsDesktop || TabletLayout.activeOf(context)
+                      ? 1180
+                      : 840,
                 ),
                 child: _classicContent(context, feed),
               ),

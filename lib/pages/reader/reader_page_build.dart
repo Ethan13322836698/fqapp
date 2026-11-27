@@ -111,7 +111,20 @@ extension _ReaderPageBuild on _ReaderPageState {
   }
 
   Widget _buildReader(BuildContext context) {
-    if (!isWindowsDesktop) return _buildReaderSurface(context);
+    if (!isWindowsDesktop) {
+      if (!TabletLayout.activeOf(context)) return _buildReaderSurface(context);
+      final viewport = MediaQuery.sizeOf(context);
+      final spread =
+          _paged && _displayPreferences.columnMode.resolveColumns(viewport) > 1;
+      return ColoredBox(
+        color: _effectiveBackgroundColor,
+        child: TabletLayout.centered(
+          context,
+          maxWidth: spread ? 1360 : 760,
+          child: _buildReaderSurface(context),
+        ),
+      );
+    }
     final chromeColors = _desktopChromePalette();
     final hasFrame = DesktopShellScope.hasFrameOf(context);
     return ValueListenableBuilder<bool>(

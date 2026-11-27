@@ -1,3 +1,4 @@
+import '../tablet_layout.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
 
@@ -97,7 +98,7 @@ class SettingsScaffold extends StatelessWidget {
       ),
       resizeToAvoidBottomInset: resizeToAvoidBottomInset,
       bottomNavigationBar: bottomNavigationBar,
-      body: body,
+      body: TabletLayout.centered(context, maxWidth: 780, child: body),
     );
   }
 }

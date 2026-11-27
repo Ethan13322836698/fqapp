@@ -283,7 +283,7 @@ mixin _LibraryClassicViews on _LibraryClassicChrome {
   /// Only Windows uses the standalone desktop tabs without [ShellDock]; other
   /// platforms retain the root dock. Edit mode also has its own bottom bar.
   double get _classicEmptyBottomClearance {
-    if (_editing) return 0;
+    if (_editing || TabletLayout.activeOf(context)) return 0;
     final hasRootDock =
         kIsWeb || defaultTargetPlatform != TargetPlatform.windows;
     if (!hasRootDock) return 0;
@@ -295,7 +295,7 @@ mixin _LibraryClassicViews on _LibraryClassicChrome {
 
   Widget _classicGrid(List<_ShelfEntry> entries, int tab) => LayoutBuilder(
     builder: (context, constraints) {
-      final columns = isWindowsDesktop
+      final columns = isWindowsDesktop || TabletLayout.activeOf(context)
           ? ((constraints.maxWidth - ShelfTokens.screenPadding * 2) / 168)
                 .floor()
                 .clamp(ShelfTokens.gridColumns, 8)
@@ -307,7 +307,9 @@ mixin _LibraryClassicViews on _LibraryClassicChrome {
           ShelfTokens.screenPadding,
           ShelfTokens.spaceXS,
           ShelfTokens.screenPadding,
-          isWindowsDesktop ? 24.0 : ShelfTokens.contentBottomInset,
+          isWindowsDesktop || TabletLayout.activeOf(context)
+              ? MediaQuery.paddingOf(context).bottom + 24
+              : ShelfTokens.contentBottomInset,
         ),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: columns,
@@ -340,7 +342,7 @@ mixin _LibraryClassicViews on _LibraryClassicChrome {
   Widget _classicDoubleGrid(List<_ShelfEntry> entries, int tab) =>
       LayoutBuilder(
         builder: (context, constraints) {
-          final columns = isWindowsDesktop
+          final columns = isWindowsDesktop || TabletLayout.activeOf(context)
               ? ((constraints.maxWidth - ShelfTokens.screenPadding * 2) / 340)
                     .floor()
                     .clamp(2, 4)
@@ -352,7 +354,9 @@ mixin _LibraryClassicViews on _LibraryClassicChrome {
               ShelfTokens.screenPadding,
               ShelfTokens.spaceXS,
               ShelfTokens.screenPadding,
-              isWindowsDesktop ? 24.0 : ShelfTokens.contentBottomInset,
+              isWindowsDesktop || TabletLayout.activeOf(context)
+                  ? MediaQuery.paddingOf(context).bottom + 24
+                  : ShelfTokens.contentBottomInset,
             ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
@@ -390,7 +394,9 @@ mixin _LibraryClassicViews on _LibraryClassicChrome {
         left: isWindowsDesktop ? 16 : 0,
         right: isWindowsDesktop ? 16 : 0,
         top: ShelfTokens.spaceXS,
-        bottom: isWindowsDesktop ? 24.0 : ShelfTokens.contentBottomInset,
+        bottom: isWindowsDesktop || TabletLayout.activeOf(context)
+            ? MediaQuery.paddingOf(context).bottom + 24
+            : ShelfTokens.contentBottomInset,
       ),
       itemCount: entries.length,
       separatorBuilder: (context, index) => Divider(
@@ -413,7 +419,7 @@ mixin _LibraryClassicViews on _LibraryClassicChrome {
         );
       },
     );
-    if (!isWindowsDesktop) return list;
+    if (!isWindowsDesktop && !TabletLayout.activeOf(context)) return list;
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(

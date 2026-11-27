@@ -1,3 +1,4 @@
+import '../widgets/tablet_layout.dart';
 import 'dart:async';
 
 import 'package:cupertino_ui/cupertino_ui.dart';

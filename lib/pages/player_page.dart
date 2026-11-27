@@ -1,3 +1,4 @@
+import '../widgets/tablet_layout.dart';
 import '../services/drama_feature_preferences.dart';
 import '../services/desktop_platform.dart';
 import '../services/audio_floating_routes.dart';
@@ -1819,9 +1820,12 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     // 设置页切「播放页布局」后要立刻换形态：偏好走全局 notifier，回到播放页
     // 时 chrome 与分屏面板一起重建，不依赖路由回弹时的偶然 build。
-    return ValueListenableBuilder<PlayerLayoutMode>(
-      valueListenable: PlayerLayoutPreferences.mode,
-      builder: (context, layoutMode, _) => _chrome(layoutMode),
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        PlayerLayoutPreferences.mode,
+        PlayerLayoutPreferences.hasSavedMode,
+      ]),
+      builder: (context, _) => _chrome(PlayerLayoutPreferences.mode.value),
     );
   }
 
@@ -1830,7 +1834,14 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     // 每次 build 重读，配置变化无需重启页面。
     final style = PlayerStyleConfig.instance;
     return VideoPlayerChrome(
-      layoutMode: layoutMode,
+      layoutMode:
+          layoutMode == PlayerLayoutMode.immersive &&
+              !PlayerLayoutPreferences.hasSavedMode.value &&
+              TabletLayout.activeOf(context, minWidth: 840) &&
+              widget.shortSeries &&
+              !widget.openFullScreen
+          ? PlayerLayoutMode.auto
+          : layoutMode,
       splitPanel: _buildSplitPanel(),
       player: _player,
       title: widget.title,

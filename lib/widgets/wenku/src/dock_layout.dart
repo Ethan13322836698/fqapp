@@ -1,3 +1,4 @@
+import '../../tablet_layout.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -51,7 +52,10 @@ abstract final class DockLayout {
   }
 
   /// Clearance leaves the last row above the dock while preserving Android.
-  static double scrollPaddingOf(BuildContext context) => _ios
+  static double scrollPaddingOf(BuildContext context) =>
+      TabletLayout.activeOf(context)
+      ? MediaQuery.paddingOf(context).bottom + 24
+      : _ios
       ? bottomPaddingOf(context) + heightOf(context) + 20
       : MediaQuery.paddingOf(context).bottom + 120;
 }
