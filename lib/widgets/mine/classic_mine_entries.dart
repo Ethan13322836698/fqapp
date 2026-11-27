@@ -1,5 +1,6 @@
 // Legacy presentation from issue #288, fqapp-backup@f329399.
 // Reads the current application stores; no legacy data or networking is copied.
+import '../../services/drama_feature_preferences.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
 
@@ -147,6 +148,10 @@ void _push(BuildContext context, Widget page) =>
 
 /// 小说离线缓存和短剧离线缓存是两套存储，各自有管理页；这里只做分流。
 Future<void> _showCacheChoices(BuildContext context) async {
+  if (!DramaFeaturePreferences.visible) {
+    _push(context, const CachedBooksPage());
+    return;
+  }
   await showHomeSheet<void>(
     context: context,
     title: '离线缓存',

@@ -14,6 +14,7 @@ import '../services/app_theme_style.dart';
 import '../services/book_open_preferences.dart';
 import '../services/chapter_cache_store.dart';
 import '../services/desktop_platform.dart';
+import '../services/drama_feature_preferences.dart';
 import '../services/frame_stats.dart';
 import '../services/shell_visibility.dart';
 import '../services/home_continue_preferences.dart';
@@ -192,6 +193,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void initState() {
     super.initState();
+    DramaFeaturePreferences.instance.enabled.addListener(_onDramaChanged);
     final store = LibraryStore.instance;
     if (store.isInitialized) {
       _historyListenable = store.historyListenable
@@ -206,6 +208,17 @@ class _HomePageState extends ConsumerState<HomePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ref.read(homeProvider.notifier).load();
     });
+  }
+
+  void _onDramaChanged() {
+    _tabProgress.value = 0;
+    _blocksBody = null;
+    _onLocalDataChanged();
+    final index = ref.read(homeProvider).tabIndex;
+    if (index < homeCategories.length &&
+        !DramaFeaturePreferences.allowsLabel(homeCategories[index].label)) {
+      _selectTab(0);
+    }
   }
 
   void _onLocalDataChanged() {
@@ -281,6 +294,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     for (final controller in _tabScrolls.values) {
       controller.dispose();
     }
+    DramaFeaturePreferences.instance.enabled.removeListener(_onDramaChanged);
     _tabProgress.dispose();
     super.dispose();
   }
@@ -373,7 +387,21 @@ class _HomePageState extends ConsumerState<HomePage> {
     _tabStates[state.tabIndex] = state;
     _scheduleExternalSync();
     final palette = HomePalette.of(context);
-    final categories = _categoriesOf(state);
+    final allCategories = _categoriesOf(state);
+    final visibleTabs = [
+      for (var i = 0; i < allCategories.length; i++)
+        if (DramaFeaturePreferences.allowsLabel(allCategories[i].label)) i,
+    ];
+    final categories = [for (final index in visibleTabs) allCategories[index]];
+    final selected = visibleTabs
+        .indexOf(state.tabIndex)
+        .clamp(0, visibleTabs.length - 1);
+    void selectVisible(int index) {
+      if (index >= 0 && index < visibleTabs.length) {
+        _selectTab(visibleTabs[index]);
+      }
+    }
+
     final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
     return Scaffold(
       backgroundColor: palette.canvas,
@@ -410,8 +438,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                             child: ValueListenableBuilder<double>(
                               valueListenable: _tabProgress,
                               builder: (context, progress, _) => HomeTabBar(
-                                selectedIndex: state.tabIndex,
-                                onSelect: _selectTab,
+                                selectedIndex: selected,
+                                onSelect: selectVisible,
                                 categories: categories,
                                 progress: progress,
                                 showBottomBorder: false,
@@ -467,8 +495,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                   ValueListenableBuilder<double>(
                     valueListenable: _tabProgress,
                     builder: (context, progress, _) => HomeTabBar(
-                      selectedIndex: state.tabIndex,
-                      onSelect: _selectTab,
+                      selectedIndex: selected,
+                      onSelect: selectVisible,
                       categories: categories,
                       progress: progress,
                     ),
@@ -487,9 +515,9 @@ class _HomePageState extends ConsumerState<HomePage> {
                       });
                       return ClipRect(
                         child: TabSwipeArea.pages(
-                          index: state.tabIndex,
+                          index: selected,
                           count: categories.length,
-                          onSelect: _selectTab,
+                          onSelect: selectVisible,
                           // The header lives outside the swipe area, so it
                           // cannot see the drag offset; this is how the
                           // underline learns to follow the finger.
@@ -498,8 +526,11 @@ class _HomePageState extends ConsumerState<HomePage> {
                               _tabProgress.value = value;
                             }
                           },
-                          pageBuilder: (context, target) =>
-                              _buildTabPage(target, gridWidth, textScale),
+                          pageBuilder: (context, target) => _buildTabPage(
+                            visibleTabs[target],
+                            gridWidth,
+                            textScale,
+                          ),
                         ),
                       );
                     },
@@ -752,7 +783,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     final entries = <MediaItem>[];
     final seen = <String>{};
     var rendered = false;
-    for (final cell in cells) {
+    for (final original in cells) {
+      final cell = _visibleCell(original);
+      if (cell == null) continue;
       // 只有真拿到 widget 才算处理过。handles() 为真但 build() 返回 null 时
       // 要落到 card 分支，否则这个块会被静默跳过。
       final custom = HomeCellRenderers.handles(cell.showType)
@@ -983,7 +1016,33 @@ class _HomePageState extends ConsumerState<HomePage> {
     ];
   }
 
+  HomeCell? _visibleCell(HomeCell cell) {
+    if (DramaFeaturePreferences.visible) return cell;
+    if (!DramaFeaturePreferences.allowsLabel(cell.name)) return null;
+    final items = cell.items
+        .where((item) => DramaFeaturePreferences.allowsKind(item.kind))
+        .toList();
+    final children = [for (final child in cell.children) ?_visibleCell(child)];
+    if (cell.showType != kHomeCellRank &&
+        !cell.isEmpty &&
+        items.isEmpty &&
+        children.every((child) => child.isEmpty)) {
+      return null;
+    }
+    return HomeCell(
+      id: cell.id,
+      name: cell.name,
+      showType: cell.showType,
+      style: cell.style,
+      extra: cell.extra,
+      items: items,
+      children: children,
+      url: cell.url,
+    );
+  }
+
   void _openItem(MediaItem item) {
+    if (!DramaFeaturePreferences.allowsKind(item.kind)) return;
     openBookDetail(context, item);
   }
 

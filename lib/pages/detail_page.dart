@@ -1,3 +1,4 @@
+import '../services/drama_feature_preferences.dart';
 import '../widgets/tablet_layout.dart';
 import '../widgets/desktop_chapter_sidebar.dart';
 import '../services/desktop_platform.dart';
@@ -319,6 +320,7 @@ class _DetailPageState extends State<DetailPage> {
   @override
   void initState() {
     super.initState();
+    DramaFeaturePreferences.instance.enabled.addListener(_onDramaChanged);
     _tab = _isVideo ? '短剧' : kindLabels[widget.item.kind] ?? '小说';
     // A whole-book download outlives this page: coming back re-attaches to the
     // same batch instead of starting a second one.
@@ -331,7 +333,7 @@ class _DetailPageState extends State<DetailPage> {
         active.addListener(_onDownloadChanged);
       }
     }
-    _load();
+    if (DramaFeaturePreferences.allowsKind(widget.item.kind)) _load();
     unawaited(_loadCatalogueOrder());
   }
 
@@ -363,6 +365,7 @@ class _DetailPageState extends State<DetailPage> {
 
   @override
   void dispose() {
+    DramaFeaturePreferences.instance.enabled.removeListener(_onDramaChanged);
     _anchors.detach();
     _scroll.dispose();
     final download = _download;
@@ -372,6 +375,19 @@ class _DetailPageState extends State<DetailPage> {
       WholeBookDownload.release(download);
     }
     super.dispose();
+  }
+
+  void _onDramaChanged() {
+    if (!_isVideo) return;
+    if (DramaFeaturePreferences.visible) {
+      unawaited(_load());
+    } else {
+      ++_loadGeneration;
+      ++_directoryRetryGeneration;
+      ++_openGeneration;
+      ++_historyGeneration;
+      setState(() {});
+    }
   }
 
   Future<void> _load() async {
@@ -672,6 +688,12 @@ class _DetailPageState extends State<DetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!DramaFeaturePreferences.allowsKind(widget.item.kind)) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(child: Text('短剧功能已关闭')),
+      );
+    }
     final palette = HomePalette.of(context);
     final style = AppUiScope.of(context);
     _anchors.noteLayoutStyle(style);
@@ -2373,6 +2395,7 @@ class _DetailPageState extends State<DetailPage> {
   }
 
   Future<void> _openChapter(Chapter chapter, {bool replace = false}) async {
+    if (!DramaFeaturePreferences.allowsKind(widget.item.kind)) return;
     // An explicit chapter selection supersedes any pending resume lookup.
     ++_openGeneration;
     ++_historyGeneration;
@@ -2503,6 +2526,7 @@ Future<void> openBookDetail(
   MediaItem item, {
   BookOpenEntry entry = BookOpenEntry.discover,
 }) async {
+  if (!DramaFeaturePreferences.allowsKind(item.kind)) return;
   // 书旗条目走自己的详情页：它的 bookId 是另一套命名空间，番茄的 DetailPage
   // 会拿这个 id 去查番茄接口，必然查不到。
   if (isShuqiItem(item)) {
@@ -2520,7 +2544,9 @@ Future<void> openBookDetail(
   }
   final preferences = BookOpenPreferences.instance;
   await preferences.load();
-  if (!context.mounted) return;
+  if (!context.mounted || !DramaFeaturePreferences.allowsKind(item.kind)) {
+    return;
+  }
   await Navigator.push(
     context,
     MaterialPageRoute<void>(

@@ -14,13 +14,17 @@ class _ShelfKindFilter extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      const kinds = [
+      const allKinds = [
         (null, '全部'),
         ('book', '小说'),
         ('manga', '漫画'),
         ('video', '短剧'),
         ('manju', '漫剧'),
         ('audio', '听书'),
+      ];
+      final kinds = [
+        for (final kind in allKinds)
+          if (DramaFeaturePreferences.allowsKind(kind.$1)) kind,
       ];
       const gap = 6.0;
       const padding = 9.0;

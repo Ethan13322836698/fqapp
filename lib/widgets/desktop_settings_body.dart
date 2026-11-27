@@ -16,6 +16,14 @@ class _DesktopSettingsBodyState extends State<DesktopSettingsBody> {
   int _selected = 0;
 
   @override
+  void didUpdateWidget(DesktopSettingsBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final title = oldWidget.categories[_selected].title;
+    final index = widget.categories.indexWhere((item) => item.title == title);
+    _selected = index < 0 ? 0 : index;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final palette = HomePalette.of(context);
     final category = widget.categories[_selected];
@@ -63,7 +71,7 @@ class _DesktopSettingsBodyState extends State<DesktopSettingsBody> {
               child: ColoredBox(
                 color: palette.canvas,
                 child: KeyedSubtree(
-                  key: ValueKey(_selected),
+                  key: ValueKey(category.title),
                   child: Navigator(
                     onGenerateRoute: (_) => MaterialPageRoute<void>(
                       builder:

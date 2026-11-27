@@ -22,6 +22,7 @@ import 'package:fqapp/pages/text_replacement_page.dart';
 import 'package:fqapp/pages/theme_page.dart';
 import 'package:fqapp/services/app_theme_style.dart';
 import 'package:fqapp/services/desktop_platform.dart';
+import 'package:fqapp/services/drama_feature_preferences.dart';
 import 'package:fqapp/services/library_store.dart';
 import 'package:fqapp/services/shelf_group_store.dart';
 import 'package:fqapp/services/shelf_store.dart';
@@ -74,6 +75,45 @@ void main() {
     if (hiveDirectory.existsSync()) {
       await hiveDirectory.delete(recursive: true);
     }
+  });
+
+  testWidgets('短剧开关实时更新首页分类和底部导航', (tester) async {
+    final preferences = DramaFeaturePreferences.instance;
+    addTearDown(() => preferences.enabled.value = true);
+    await tester.pumpWidget(
+      _withFakeHome(
+        FqApp(initializer: _isolatedStartup, backendStarter: () async {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Finder homeTab(String label) =>
+        find.descendant(of: find.byType(HomePage), matching: find.text(label));
+    final dock = find.byType(ShellDock);
+    final dockDrama = find.descendant(of: dock, matching: find.text('短剧'));
+    expect(dockDrama, findsOneWidget);
+    expect(homeTab('短剧'), findsOneWidget);
+    expect(homeTab('漫剧'), findsOneWidget);
+    await tester.tap(homeTab('短剧'));
+    await tester.pumpAndSettle();
+
+    await preferences.setEnabled(false);
+    await tester.pumpAndSettle();
+    expect(dockDrama, findsNothing);
+    expect(homeTab('短剧'), findsNothing);
+    expect(homeTab('漫剧'), findsNothing);
+    expect(homeTab('漫画'), findsOneWidget);
+    expect(rootTab(tester), 0);
+    expect(
+      (await SharedPreferences.getInstance()).getBool('drama_feature_enabled'),
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
+
+    await preferences.setEnabled(true);
+    await tester.pumpAndSettle();
+    expect(dockDrama, findsOneWidget);
+    expect(homeTab('短剧'), findsOneWidget);
+    expect(homeTab('漫剧'), findsOneWidget);
   });
 
   testWidgets('tablet navigation follows the preference and window width', (

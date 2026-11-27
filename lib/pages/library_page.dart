@@ -1,3 +1,4 @@
+import '../services/drama_feature_preferences.dart';
 import '../widgets/tablet_layout.dart';
 import 'dart:async';
 
@@ -78,7 +79,6 @@ part 'library_shelf_widgets.dart';
 
 /// 顶栏一级 tab 的官方文案（amg.xml 的 SlidingTabLayout；顺序同官方
 /// 书架页：书架 / 历史 / 收藏）。官方还有「圈子」，本地无此功能不设。
-const _tabTitles = ['书架', '浏览历史', '收藏'];
 
 /// 经典主题 tab 下划线在两个标签之间滑动所需的时间。它比文字动画长，因为
 /// 下划线要走过一段看得见的距离。
@@ -158,6 +158,10 @@ class LibraryPage extends StatefulWidget {
 /// （library_page_actions.dart、library_shelf_chrome.dart、
 /// library_shelf_views.dart）都 `on` 这个 mixin，从而共用同一份状态。
 mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
+  List<String> get _tabTitles => DramaFeaturePreferences.visible
+      ? const ['书架', '浏览历史', '收藏']
+      : const ['书架', '浏览历史'];
+
   /// The anchors of the classic tab buttons, used to place the underline.
   List<GlobalKey> _classicTabKeys = const [];
 
@@ -341,6 +345,7 @@ mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    DramaFeaturePreferences.instance.enabled.addListener(_onDramaChanged);
     WidgetsBinding.instance.addObserver(this);
     shellVisibleTab.addListener(_onShellVisibility);
     _syncClassicTabKeys();
@@ -394,6 +399,22 @@ mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
 
   /// Retained pages stay off the rebuild path while hidden: a write only marks
   /// them dirty and the snapshot is reloaded on the next visit.
+  void _onDramaChanged() {
+    if (!DramaFeaturePreferences.visible) {
+      if (_tab == 2) _tab = 0;
+      if (!DramaFeaturePreferences.allowsKind(_shelfKindFilter)) {
+        _shelfKindFilter = null;
+      }
+      _collectionFilter = null;
+      _editing = false;
+      _selected.clear();
+      _tabProgress.value = 0;
+    }
+    _syncClassicTabKeys();
+    _scheduleClassicMeasure();
+    if (mounted) setState(() {});
+  }
+
   void _storeChanged() {
     if (_visible) _load();
   }
@@ -593,6 +614,7 @@ mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
 
   @override
   void dispose() {
+    DramaFeaturePreferences.instance.enabled.removeListener(_onDramaChanged);
     WidgetsBinding.instance.removeObserver(this);
     shellVisibleTab.removeListener(_onShellVisibility);
     _historyChanges.removeListener(_storeChanged);

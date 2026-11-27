@@ -1,3 +1,4 @@
+import '../../services/drama_feature_preferences.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -31,7 +32,7 @@ class MineEntries extends StatelessWidget {
         FeatureEntry(
           key: const ValueKey('mine-cache'),
           title: '离线缓存',
-          subtitle: '管理小说与短剧的离线内容',
+          subtitle: '管理已下载的离线内容',
           icon: CupertinoIcons.tray_arrow_down,
           onTap: () => _showCacheChoices(context),
         ),
@@ -63,6 +64,10 @@ void _push(BuildContext context, Widget page) =>
 
 /// 小说与短剧使用两套缓存存储，入口仍先让用户选择要管理的类型。
 Future<void> _showCacheChoices(BuildContext context) async {
+  if (!DramaFeaturePreferences.visible) {
+    _push(context, const CachedBooksPage());
+    return;
+  }
   final style = AppStyleTokens.of(context);
   await showHomeSheet<void>(
     context: context,

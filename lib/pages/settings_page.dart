@@ -77,11 +77,17 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
+    DramaFeaturePreferences.instance.enabled.addListener(_onDramaChanged);
     if (isWindowsDesktop) DesktopShellState.enterSettings();
+  }
+
+  void _onDramaChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    DramaFeaturePreferences.instance.enabled.removeListener(_onDramaChanged);
     if (isWindowsDesktop) DesktopShellState.exitSettings();
     super.dispose();
   }
@@ -124,7 +130,8 @@ class _SettingsPageState extends State<SettingsPage> {
             systemBrightness: MediaQuery.platformBrightnessOf(context),
           ))
             _oledModeItem(),
-          if (!isMediaDesktop) _playerLayoutItem(),
+          if (!isMediaDesktop && DramaFeaturePreferences.visible)
+            _playerLayoutItem(),
         ],
       ),
       SettingsCategory(
@@ -190,7 +197,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ],
       ),
-      if (!isLinuxDesktop)
+      if (!isLinuxDesktop && DramaFeaturePreferences.visible)
         SettingsCategory(
           icon: SettingsCategoryIcons.drama,
           title: '短剧',
@@ -214,7 +221,7 @@ class _SettingsPageState extends State<SettingsPage> {
         icon: SettingsCategoryIcons.data,
         title: '数据',
         subtitle: '多端同步、备份与恢复、缓存与历史',
-        items: [
+        itemsBuilder: (context) => [
           SettingsItem(
             icon: Icons.sync,
             title: '多端同步',
@@ -242,15 +249,16 @@ class _SettingsPageState extends State<SettingsPage> {
               MaterialPageRoute(builder: (_) => const CachedBooksPage()),
             ),
           ),
-          SettingsItem(
-            icon: CupertinoIcons.play_rectangle,
-            title: '短剧离线缓存',
-            subtitle: isLinuxDesktop ? '管理已下载文件和下载任务' : '短剧下载、离线播放和清理缓存',
-            onTap: (context, _) => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CachedDramasPage()),
+          if (DramaFeaturePreferences.visible)
+            SettingsItem(
+              icon: CupertinoIcons.play_rectangle,
+              title: '短剧离线缓存',
+              subtitle: isLinuxDesktop ? '管理已下载文件和下载任务' : '短剧下载、离线播放和清理缓存',
+              onTap: (context, _) => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CachedDramasPage()),
+              ),
             ),
-          ),
           _clearHistItem(),
         ],
       ),
@@ -500,7 +508,7 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (context, enabled, _) => SettingsToggleRow(
         icon: LucideIcons.clapperboard,
         title: '短剧功能',
-        description: '关闭后隐藏短剧入口并停用短剧播放',
+        description: '关闭后隐藏短剧和漫剧入口',
         optimistic: false,
         value: enabled,
         onChanged: (value) async {

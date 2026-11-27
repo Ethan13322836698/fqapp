@@ -23,6 +23,7 @@ import 'package:material_ui/material_ui.dart';
 import '../models/media_item.dart';
 import '../models/reading_stats.dart';
 import '../services/book_open_preferences.dart';
+import '../services/drama_feature_preferences.dart';
 import '../services/library_store.dart';
 import '../services/media_history_store.dart';
 import '../services/shelf_store.dart';
@@ -64,9 +65,17 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   bool _storeDirty = true;
   int _rhythmSelected = _rhythmDays - 1;
 
+  List<ReadingRankItem> get _visibleRank => _stats.rank
+      .where(
+        (item) =>
+            DramaFeaturePreferences.allowsKind(item.entry['kind']?.toString()),
+      )
+      .toList();
+
   @override
   void initState() {
     super.initState();
+    DramaFeaturePreferences.instance.enabled.addListener(_onDramaChanged);
     _historyChanges = LibraryStore.instance.historyListenable
       ..addListener(_scheduleStoreReload);
     _readTimeChanges = LibraryStore.instance.readTimeListenable
@@ -90,12 +99,15 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
 
   @override
   void dispose() {
+    DramaFeaturePreferences.instance.enabled.removeListener(_onDramaChanged);
     _reloadTimer?.cancel();
     _historyChanges.removeListener(_scheduleStoreReload);
     _readTimeChanges.removeListener(_scheduleStoreReload);
     _shelfChanges.removeListener(_scheduleStoreReload);
     super.dispose();
   }
+
+  void _onDramaChanged() => setState(() {});
 
   void _scheduleStoreReload() {
     _storeDirty = true;
@@ -169,7 +181,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                 const SizedBox(height: 34),
                 MineHeatmap(stats: _stats, today: today),
                 const SizedBox(height: 34),
-                MineTopBooks(rank: _stats.rank, onOpen: _openEntry),
+                MineTopBooks(rank: _visibleRank, onOpen: _openEntry),
               ],
             ),
     );
@@ -219,7 +231,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         ),
         const SizedBox(height: 26),
         ClassicMineHeatmap(stats: _stats, today: today),
-        ClassicMineTopBooks(rank: _stats.rank, onOpen: _openEntry),
+        ClassicMineTopBooks(rank: _visibleRank, onOpen: _openEntry),
       ],
     );
   }

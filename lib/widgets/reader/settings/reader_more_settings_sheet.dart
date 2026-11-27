@@ -1,3 +1,4 @@
+import '../../../services/drama_feature_preferences.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
 
@@ -243,7 +244,7 @@ class _ReaderMoreSettingsSheetState
         _listeningSection(),
       ],
       if (_shows(ReaderBehaviorCategory.operations)) ...[
-        if (!isLinuxDesktop) ...[
+        if (!isLinuxDesktop && DramaFeaturePreferences.visible) ...[
           const ReaderSettingsDivider(),
           ..._videoSettings(),
         ],

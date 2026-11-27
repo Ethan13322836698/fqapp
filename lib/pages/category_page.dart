@@ -4,6 +4,7 @@ import 'package:flutter_lucide/flutter_lucide.dart';
 import '../models/category_front.dart';
 import '../services/api_client.dart';
 import '../services/desktop_platform.dart';
+import '../services/drama_feature_preferences.dart';
 import '../services/user_facing_error.dart';
 import '../widgets/category/category_dim_rail.dart';
 import '../widgets/desktop_shell_scope.dart';
@@ -95,12 +96,14 @@ class _CategoryPageState extends State<CategoryPage> {
   @override
   void initState() {
     super.initState();
+    DramaFeaturePreferences.instance.enabled.addListener(_onDramaChanged);
     _scroll.addListener(_onScroll);
     _load();
   }
 
   @override
   void dispose() {
+    DramaFeaturePreferences.instance.enabled.removeListener(_onDramaChanged);
     _scroll.dispose();
     super.dispose();
   }
@@ -108,6 +111,29 @@ class _CategoryPageState extends State<CategoryPage> {
   Future<CategoryFront> _fetch({required int tab}) =>
       widget.loader?.call(tab: tab) ??
       ApiClient.instance.categoryFront(tab: tab);
+
+  void _onDramaChanged() {
+    final tabs = _front?.tabs ?? const <CategoryTab>[];
+    final fallback = _visibleChannel(tabs, _tabValue);
+    if (fallback != null && fallback != _tabValue) {
+      _load(tab: fallback);
+    } else {
+      setState(() {});
+    }
+  }
+
+  int? _visibleChannel(List<CategoryTab> tabs, int target) {
+    final selected = tabs.where((tab) => int.tryParse(tab.value) == target);
+    if (selected.isEmpty ||
+        DramaFeaturePreferences.allowsLabel(selected.first.name)) {
+      return target;
+    }
+    return tabs
+        .where((tab) => DramaFeaturePreferences.allowsLabel(tab.name))
+        .map((tab) => int.tryParse(tab.value))
+        .nonNulls
+        .firstOrNull;
+  }
 
   Future<void> _load({int? tab}) async {
     final target = tab ?? _tabValue;
@@ -119,11 +145,18 @@ class _CategoryPageState extends State<CategoryPage> {
     try {
       final front = await _fetch(tab: target);
       if (!mounted || generation != _loadGeneration) return;
+      final visibleChannel = _visibleChannel(front.tabs, target);
+      if (visibleChannel != null && visibleChannel != target) {
+        await _load(tab: visibleChannel);
+        return;
+      }
       setState(() {
         _tabValue = target;
         _front = front;
         _error = front.isEmpty ? '分类暂时没有内容，稍后再试' : null;
-        _sections = front.isEmpty ? const <_Section>[] : _sectionsFor(front);
+        _sections = front.isEmpty || visibleChannel == null
+            ? const <_Section>[]
+            : _sectionsFor(front);
         _selected = 0;
         _expanded.clear();
       });
@@ -243,7 +276,10 @@ class _CategoryPageState extends State<CategoryPage> {
         child: Column(
           children: [
             _TopBar(
-              tabs: front?.tabs ?? const [],
+              tabs: [
+                for (final tab in front?.tabs ?? const <CategoryTab>[])
+                  if (DramaFeaturePreferences.allowsLabel(tab.name)) tab,
+              ],
               selected: _tabValue,
               onSelect: (v) => _load(tab: int.tryParse(v) ?? 1),
               onSearch: _openSearch,

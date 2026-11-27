@@ -147,7 +147,9 @@ mixin _LibraryShelfChrome on _LibraryPageActions {
     key: const Key('library-tabs'),
     groupValue: _tab,
     dense: true,
-    children: const {0: Text('书架'), 1: Text('浏览历史'), 2: Text('收藏')},
+    children: {
+      for (var i = 0; i < _tabTitles.length; i++) i: Text(_tabTitles[i]),
+    },
     onValueChanged: (value) {
       if (value != null) _selectTab(value);
     },

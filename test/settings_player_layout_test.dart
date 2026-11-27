@@ -10,6 +10,7 @@ import 'package:fqapp/pages/system_tts_settings_page.dart';
 import 'package:fqapp/services/app_theme.dart';
 import 'package:fqapp/services/app_theme_style.dart';
 import 'package:fqapp/services/audio_preferences.dart';
+import 'package:fqapp/services/drama_feature_preferences.dart';
 import 'package:fqapp/services/player_layout_preferences.dart';
 import 'package:fqapp/widgets/desktop_settings_body.dart';
 import 'package:fqapp/widgets/wenku/wenku_overlay.dart';
@@ -54,6 +55,40 @@ void main() {
     of: find.byType(GlassMenuItem),
     matching: find.text(label),
   );
+
+  testWidgets('关闭短剧后隐藏播放和缓存设置，开关仍能重新打开', (tester) async {
+    final enabled = DramaFeaturePreferences.instance.enabled;
+    addTearDown(() => enabled.value = true);
+    await mountSettings(tester);
+    expect(find.text('短剧'), findsOneWidget);
+
+    await tester.tap(find.text('外观'));
+    await tester.pumpAndSettle();
+    expect(find.text('播放页布局'), findsOneWidget);
+    final toggle = find.text('短剧功能');
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(enabled.value, isFalse);
+    expect(toggle, findsOneWidget);
+    expect(find.text('播放页布局'), findsNothing);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('短剧'), findsNothing);
+    await tester.tap(find.text('数据'));
+    await tester.pumpAndSettle();
+    expect(find.text('短剧离线缓存'), findsNothing);
+    expect(find.text('小说离线缓存'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('外观'));
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(enabled.value, isTrue);
+    expect(find.text('播放页布局'), findsOneWidget);
+  });
 
   testWidgets('外观分类里的播放页布局三选一并落盘', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;

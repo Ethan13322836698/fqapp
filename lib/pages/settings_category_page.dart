@@ -21,6 +21,7 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 
 import '../services/app_style_tokens.dart';
+import '../services/drama_feature_preferences.dart';
 import '../widgets/settings/classic_settings_icons.dart';
 import '../widgets/settings/settings_widgets.dart';
 
@@ -124,7 +125,19 @@ class SettingsCategoryPage extends StatefulWidget {
 
 class _SettingsCategoryPageState extends State<SettingsCategoryPage> {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: DramaFeaturePreferences.instance.enabled,
+    builder: (context, enabled, _) => _buildPage(context, enabled),
+  );
+
+  Widget _buildPage(BuildContext context, bool dramaEnabled) {
+    if (!dramaEnabled && widget.title == '短剧') {
+      return SettingsScaffold(
+        title: widget.title,
+        showBack: Navigator.of(context).canPop(),
+        body: const SizedBox.shrink(),
+      );
+    }
     final items = widget.itemsBuilder?.call(context) ?? widget.items;
     if (AppStyleTokens.of(context).isClassic) {
       return SettingsScaffold(

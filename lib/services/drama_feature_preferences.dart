@@ -7,6 +7,14 @@ class DramaFeaturePreferences {
   static final instance = DramaFeaturePreferences._();
   static const _key = 'drama_feature_enabled';
 
+  static bool get visible => instance.enabled.value;
+
+  static bool allowsKind(String? kind) =>
+      visible || (kind != 'video' && kind != 'manju');
+
+  static bool allowsLabel(String label) =>
+      visible || !const {'短剧', '漫剧', '视频', '有声漫画'}.contains(label.trim());
+
   final ValueNotifier<bool> enabled = ValueNotifier(true);
   Future<void>? _loading;
 

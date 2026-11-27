@@ -31,7 +31,10 @@ class RankTab {
   /// catalogue carries no kind field, so this follows the upstream rank
   /// naming. Their entries are series, not books, and the novel
   /// sub-categories do not apply to them.
-  bool get isDrama => name.contains('短剧') || name.contains('漫剧');
+  bool get isDrama => isDramaName(name);
+
+  static bool isDramaName(String name) =>
+      name.contains('短剧') || name.contains('漫剧');
 }
 
 /// A rank sub-category, e.g. 全部 / 穿越 / 系统.

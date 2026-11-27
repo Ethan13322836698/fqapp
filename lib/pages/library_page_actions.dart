@@ -43,7 +43,7 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
   }
 
   void _selectTab(int tab) {
-    if (tab == _tab) return;
+    if (tab == _tab || tab < 0 || tab >= _tabTitles.length) return;
     setState(() {
       _tab = tab;
       // 编辑态与选中集合属于当前 tab，切 tab 时回到浏览态。
@@ -364,7 +364,8 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
       case 1:
         return [
           for (final entry in _browseHistory)
-            if (store.matchesKey(entry.contentKey, entry.author, category))
+            if (DramaFeaturePreferences.allowsKind(entry.item.kind) &&
+                store.matchesKey(entry.contentKey, entry.author, category))
               entry,
         ];
       case 2:
@@ -384,11 +385,14 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
         );
       default:
         return ShelfProjection.apply(
-          _shelfKindFilter == null
+          _shelfKindFilter == null && DramaFeaturePreferences.visible
               ? _shelf
               : [
                   for (final entry in _shelf)
-                    if (entry.item.kind == _shelfKindFilter) entry,
+                    if (DramaFeaturePreferences.allowsKind(entry.item.kind) &&
+                        (_shelfKindFilter == null ||
+                            entry.item.kind == _shelfKindFilter))
+                      entry,
                 ],
           sort: view.sort,
           reading: view.filter,
@@ -459,6 +463,7 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
   }
 
   void _tap(_ShelfEntry entry) {
+    if (!DramaFeaturePreferences.allowsKind(entry.item.kind)) return;
     if (_editing) {
       _toggleSelected(entry);
     } else {

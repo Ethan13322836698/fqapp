@@ -205,13 +205,13 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   static const _paginationThreshold = 480.0;
-  late final _showDrama = DramaFeaturePreferences.instance.enabled.value;
-  late final _categories = [
+  late List<SearchCategory> _categories = _visibleCategories();
+
+  static List<SearchCategory> _visibleCategories() => [
     for (final category in SearchCategory.values)
-      if (_showDrama || !_isDramaKind(category.kind)) category,
+      if (DramaFeaturePreferences.allowsKind(category.kind)) category,
   ];
 
-  static bool _isDramaKind(String? kind) => kind == 'video' || kind == 'manju';
   static const _listViewPreference = 'search_list_view';
   static const _minimumScorePreference = 'search_minimum_score';
 
@@ -323,6 +323,7 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
+    DramaFeaturePreferences.instance.enabled.addListener(_onDramaChanged);
     if (isWindowsDesktop) DesktopShellState.enterSearch();
     // 首帧就停在该页签：分区入口（短剧/漫剧）进来的搜索不该先闪「综合」。
     _tabIndex = _categories
@@ -446,7 +447,9 @@ class _SearchPageState extends State<SearchPage> {
 
   /// 当前结果视口的完整过滤:评分 + 只对番茄关键词结果生效的二次筛选。
   bool _matchesFilters(MediaItem item) =>
-      _matchesScore(item) && (!_filtersEnabled || _filters.matches(item));
+      DramaFeaturePreferences.allowsKind(item.kind) &&
+      _matchesScore(item) &&
+      (!_filtersEnabled || _filters.matches(item));
 
   /// 应用一组新的二次筛选,并在需要时补一次分页检查。
   ///
@@ -948,9 +951,7 @@ class _SearchPageState extends State<SearchPage> {
         for (var index = 0; index < _categories.length; index++) {
           final feed = _feeds[index];
           final kind = _categories[index].kind;
-          if (item != null &&
-              (_showDrama || !_isDramaKind(item.kind)) &&
-              (kind == null || kind == item.kind)) {
+          if (item != null && (kind == null || kind == item.kind)) {
             feed.items.add(item);
           }
           feed.initialized = true;
@@ -1014,7 +1015,6 @@ class _SearchPageState extends State<SearchPage> {
       setState(() {
         for (final item in page.items) {
           if (item.id.isEmpty ||
-              (!_showDrama && _isDramaKind(item.kind)) ||
               (category.kind != null && item.kind != category.kind)) {
             continue;
           }
@@ -1061,8 +1061,43 @@ class _SearchPageState extends State<SearchPage> {
     });
   }
 
+  void _onDramaChanged() {
+    final selected = _categories[_tabIndex];
+    final saved = _categories[_fanqieTab];
+    final oldCategories = _categories;
+    final feeds = Map<SearchCategory, _SearchFeed>.fromIterables(
+      oldCategories,
+      _feeds,
+    );
+    ++_requestGeneration;
+    _activeRequest?.cancel();
+    setState(() {
+      _categories = _visibleCategories();
+      _tabIndex = _categories
+          .indexOf(selected)
+          .clamp(0, _categories.length - 1);
+      _fanqieTab = _categories.indexOf(saved).clamp(0, _categories.length - 1);
+      _feeds = [
+        for (final category in _categories)
+          if (feeds[category] case final feed? when !feed.loading)
+            feed
+          else
+            _SearchFeed(),
+      ];
+    });
+    if (_query.isEmpty) return;
+    if (_shuqiSource) {
+      if (!_feeds.first.initialized) {
+        unawaited(_searchShuqi(_query, _requestGeneration));
+      }
+    } else if (!_feeds[_tabIndex].initialized) {
+      unawaited(_loadMore());
+    }
+  }
+
   @override
   void dispose() {
+    DramaFeaturePreferences.instance.enabled.removeListener(_onDramaChanged);
     if (isWindowsDesktop) DesktopShellState.exitSearch();
     ++_requestGeneration;
     ++_suggestGeneration;
@@ -2089,7 +2124,12 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _selectTab(int index) {
-    if (_shuqiSource || index == _tabIndex) return;
+    if (_shuqiSource ||
+        index == _tabIndex ||
+        index < 0 ||
+        index >= _categories.length) {
+      return;
+    }
     setState(() => _tabIndex = index);
     if (_query.isEmpty) return;
     final feed = _feeds[index];

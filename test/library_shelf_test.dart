@@ -18,6 +18,7 @@ import 'package:fqapp/services/book_open_preferences.dart';
 import 'package:fqapp/services/api_client.dart';
 import 'package:fqapp/services/chapter_cache_store.dart';
 import 'package:fqapp/services/connectivity_status.dart';
+import 'package:fqapp/services/drama_feature_preferences.dart';
 import 'package:fqapp/services/library_store.dart';
 import 'package:fqapp/services/reader_underline_store.dart';
 import 'package:fqapp/services/secure_key_provider.dart';
@@ -136,6 +137,53 @@ void main() {
   });
 
   group('LibraryPage', () {
+    testWidgets('关闭短剧后隐藏书架和历史入口，重新打开时原记录还在', (tester) async {
+      final enabled = DramaFeaturePreferences.instance.enabled;
+      addTearDown(() => enabled.value = true);
+      await tester.runAsync(() async {
+        await ShelfStore.instance.add(_item('novel', title: '架上小说'));
+        await ShelfStore.instance.add(
+          _item('series', title: '架上短剧', kind: 'video'),
+        );
+        await ShelfStore.instance.add(
+          _item('animated', title: '架上漫剧', kind: 'manju'),
+        );
+        await LibraryStore.instance.addHistory({
+          'id': 'series',
+          'kind': 'video',
+          'title': '观看记录',
+          'time': DateTime.now().millisecondsSinceEpoch,
+        });
+      });
+
+      await tester.pumpWidget(_app());
+      await tester.pumpAndSettle();
+      expect(find.text('架上短剧'), findsWidgets);
+      expect(find.text('架上漫剧'), findsWidgets);
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      expect(find.text('架上短剧'), findsWidgets);
+
+      enabled.value = false;
+      await tester.pumpAndSettle();
+      expect(find.text('收藏'), findsNothing);
+      expect(find.byKey(const Key('library-shelf-kind-video')), findsNothing);
+      expect(find.byKey(const Key('library-shelf-kind-manju')), findsNothing);
+      expect(find.text('架上小说'), findsWidgets);
+      expect(find.text('架上短剧'), findsNothing);
+      expect(find.text('架上漫剧'), findsNothing);
+      await tester.tap(find.text('浏览历史'));
+      await tester.pumpAndSettle();
+      expect(find.text('观看记录'), findsNothing);
+      expect(ShelfStore.instance.records(), hasLength(3));
+      expect(LibraryStore.instance.historySnapshot(), hasLength(1));
+
+      enabled.value = true;
+      await tester.pumpAndSettle();
+      expect(find.text('观看记录'), findsWidgets);
+      expect(find.text('收藏'), findsOneWidget);
+    });
+
     testWidgets('书架 tab 读本地收藏，浏览历史 tab 读阅读历史', (tester) async {
       // 真实的 Hive 文件 I/O 只能在真实异步区里完成：testWidgets 的测试体跑在
       // fake async 区，直接 await store 会永久挂住整份测试。

@@ -269,10 +269,10 @@ Future<void> _loadLocalData() async {
     // 样式 store 是可选外观偏好,内部吞错,读失败只回落默认外观(#421)。
     spFuture,
     optional(() async => TabletPreferences.instance.load(await spFuture)),
+    optional(DramaFeaturePreferences.instance.load),
     themeStyleFuture,
   ]);
   unawaited(optional(AudioPreferences.instance.load));
-  unawaited(optional(DramaFeaturePreferences.instance.load));
   // Until the saved profile loads, retain history so a startup write cannot
   // turn old cloud records into deletions.
   LibraryStore.instance.keepHistoryForSync = true;
@@ -894,10 +894,10 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
     final enabled = DramaFeaturePreferences.instance.enabled.value;
     if (!enabled && desktopTab.value == 1) desktopTab.value = 0;
     setState(() {
+      _tabCache.remove(2);
       if (enabled) return;
       _visitedTabs.remove(1);
       _tabCache.remove(1);
-      _tabCache.remove(2);
       if (_index == 1 || _premount == 1) {
         ++_premountGeneration;
         if (_index == 1) _index = 0;

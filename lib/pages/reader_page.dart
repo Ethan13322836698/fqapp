@@ -368,6 +368,7 @@ class _ReaderPageState extends State<ReaderPage>
   @override
   void initState() {
     super.initState();
+    DramaFeaturePreferences.instance.enabled.addListener(_onDramaChanged);
     _chrome = AnimationController(
       vsync: this,
       duration: WenkuMotion.enter,
@@ -487,8 +488,21 @@ class _ReaderPageState extends State<ReaderPage>
     _addressToPlayback();
   }
 
+  void _onDramaChanged() {
+    if (!DramaFeaturePreferences.visible) {
+      _videoMatchRequest?.cancel();
+      _videoMatchRequest = null;
+      _videoMatchAttempt = null;
+      _cancelVideoOpen();
+    } else if (_controlsVisible) {
+      unawaited(_loadVideoMatch());
+    }
+    _setState(() {});
+  }
+
   @override
   void dispose() {
+    DramaFeaturePreferences.instance.enabled.removeListener(_onDramaChanged);
     if (isWindowsDesktop) {
       DesktopShellState.clearReaderChrome(_desktopShellOwner);
     }

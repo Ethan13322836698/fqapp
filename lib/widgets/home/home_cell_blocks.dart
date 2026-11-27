@@ -2,7 +2,9 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../models/home_cell.dart';
 import '../../models/media_item.dart';
+import '../../models/rank.dart';
 import '../../services/app_style_tokens.dart';
+import '../../services/drama_feature_preferences.dart';
 import 'classic_home_rank_rail.dart';
 import 'home_archive.dart';
 import 'home_design.dart';
@@ -120,8 +122,6 @@ class _HomeRankCellState extends State<HomeRankCell> {
   /// Guards against a slow response for an older board overwriting a newer one.
   int _generation = 0;
 
-  List<MediaItem> get _books => _loaded ?? widget.cell.flatten();
-
   Future<void> _select(int index) async {
     if (index == _index) return;
     final algos = homeRankAlgos(widget.cell);
@@ -159,19 +159,32 @@ class _HomeRankCellState extends State<HomeRankCell> {
   @override
   Widget build(BuildContext context) {
     final cell = widget.cell;
-    final books = _books;
-    if (books.isEmpty) return const SizedBox.shrink();
+    final allNames = homeRankNames(cell);
+    final visibleBoards = [
+      for (final (index, name) in allNames.indexed)
+        if (DramaFeaturePreferences.visible || !RankTab.isDramaName(name))
+          index,
+    ];
+    final names = [for (final index in visibleBoards) allNames[index]];
+    final selected = visibleBoards.indexOf(_index);
+    final books =
+        ((selected < 0 && !DramaFeaturePreferences.visible ? null : _loaded) ??
+                cell.flatten())
+            .where((item) => DramaFeaturePreferences.allowsKind(item.kind))
+            .toList();
+    if (books.isEmpty && names.length <= 1) return const SizedBox.shrink();
+    final loading = _loading && selected >= 0;
+    void selectVisible(int index) => _select(visibleBoards[index]);
     final palette = HomePalette.of(context);
-    final names = homeRankNames(cell);
     final title = cell.name.isEmpty ? '排行榜' : cell.name;
     if (AppStyleTokens.of(context).isClassic) {
       return ClassicHomeRankRail(
         title: title,
         names: names,
-        selectedIndex: _index,
+        selectedIndex: selected,
         books: books,
-        loading: _loading,
-        onSelect: _select,
+        loading: loading,
+        onSelect: selectVisible,
         onOpen: widget.onOpen,
         onMore: widget.onMore,
       );
@@ -189,9 +202,13 @@ class _HomeRankCellState extends State<HomeRankCell> {
           topPadding: 8,
         ),
         if (names.length > 1)
-          _BoardNames(names: names, selectedIndex: _index, onSelect: _select),
+          _BoardNames(
+            names: names,
+            selectedIndex: selected,
+            onSelect: selectVisible,
+          ),
         const SizedBox(height: 8),
-        if (_loading)
+        if (loading)
           LayoutBuilder(
             builder: (context, constraints) => SizedBox(
               height: HomeRankShelf.loadingHeight(
@@ -210,7 +227,7 @@ class _HomeRankCellState extends State<HomeRankCell> {
               ),
             ),
           )
-        else
+        else if (books.isNotEmpty)
           HomeRankShelf(books: books, onOpen: widget.onOpen, stepped: stepped),
       ],
     );

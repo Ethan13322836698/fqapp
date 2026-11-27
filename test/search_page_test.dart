@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fqapp/models/media_item.dart';
 import 'package:fqapp/pages/search_page.dart';
+import 'package:fqapp/services/drama_feature_preferences.dart';
 import 'package:fqapp/services/search_history_store.dart';
 import 'package:fqapp/widgets/wenku/wenku_ui.dart';
 
@@ -16,6 +17,45 @@ void main() {
   setUp(
     () => SharedPreferences.setMockInitialValues({'search_list_view': false}),
   );
+
+  testWidgets('关闭短剧会过滤已载入的综合结果，重新打开会恢复', (tester) async {
+    final enabled = DramaFeaturePreferences.instance.enabled;
+    addTearDown(() => enabled.value = true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SearchPage(
+          searchLoader: (query, {required tabType, required offset}) async => [
+            SearchTab(
+              title: '综合',
+              items: [
+                _item('novel', '搜索里的小说'),
+                _item('series', '搜索里的短剧', kind: 'video'),
+                _item('animated', '搜索里的漫剧', kind: 'manju'),
+              ],
+              hasMore: false,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '作品');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(searchVisibleKinds(tester), ['book', 'video', 'manju']);
+
+    enabled.value = false;
+    await tester.pumpAndSettle();
+    expect(searchSegment('短剧'), findsNothing);
+    expect(searchSegment('漫剧'), findsNothing);
+    expect(searchVisibleKinds(tester), ['book']);
+
+    enabled.value = true;
+    await tester.pumpAndSettle();
+    expect(searchVisibleKinds(tester), ['book', 'video', 'manju']);
+    expect(searchSegment('短剧'), findsOneWidget);
+    expect(searchSegment('漫剧'), findsOneWidget);
+  });
 
   testWidgets(
     'a category can be chosen before search and survives new queries',
