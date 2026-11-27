@@ -1,0 +1,40 @@
+name: Android update feed
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  feed:
+    if: ${{ !github.event.release.prerelease && startsWith(github.event.release.tag_name, 'v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.release.tag_name }}
+      MIRROR_ROOT: ${{ vars.ANDROID_UPDATE_MIRROR_ROOT }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Generate feed from the published release
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/android-update"
+          cd "$RUNNER_TEMP/android-update"
+          gh release view --repo "$GITHUB_REPOSITORY" --json body --jq .body -- "$TAG" > notes.md
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS -- "$TAG"
+          args=()
+          if [[ -n "$MIRROR_ROOT" ]]; then
+            args+=(--mirror-base "${MIRROR_ROOT%/}/$TAG/")
+          fi
+          python3 "$GITHUB_WORKSPACE/scripts/generate_android_update_feed.py" "$TAG" \
+            --notes notes.md --checksums SHA256SUMS "${args[@]}" > android.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: android-update-feed
+          path: ${{ runner.temp }}/android-update/android.json
+          if-no-files-found: error

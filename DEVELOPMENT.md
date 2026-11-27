@@ -1816,3 +1816,24 @@ Seek 越尾按 Next（受 CanGoNext 控制），SetPosition 越尾忽略；旧�
 runner 在窗口子类 dispose 调用父类前释放 bridge，保留 worker join，不关闭退出诊断。
 真实协议回归目标仍为 test/support/linux_desktop_runtime.dart；拒绝 CANCEL 注入由
 私有 SSIP 代理执行，ALSA null/Xvfb 的结果不代表物理声音、compositor、锁屏或挂起验收。
+
+### Android 应用内更新
+
+应用冷启动后检查一次正式版，也可以在「关于 → 检查更新」手动检查。
+使用正式签名的 Android 安装才会下载并打开系统安装器。电脑端和其他签名的安装继续打开 GitHub 发布页。
+更新下载使用正式 Release 的两个独立 APK 及同一份 `SHA256SUMS`。
+
+正式 Release 发布后，`Android update feed` 工作流会将 `android.json` 上传为构建产物。
+如设置仓库变量 `ANDROID_UPDATE_MIRROR_ROOT`，工作流会在该 URL 下按版本号生成镜像地址。
+
+有自有镜像时，先把正式发布中的两个 APK 和原始 `SHA256SUMS` 上传到同一目录，
+再用正式发布说明生成静态文件：
+
+```bash
+python3 scripts/generate_android_update_feed.py v1.0.208 \
+  --notes release-notes.md --checksums SHA256SUMS \
+  --mirror-base https://novel.tttq.de/download/v1.0.208/ > android.json
+```
+
+将生成的文件部署到 `https://novel.tttq.de/update/android.json`。没有镜像时可以省略
+`--mirror-base`，或直接由 GitHub Releases 提供版本及下载。切勿发布预览版到正式 feed。
