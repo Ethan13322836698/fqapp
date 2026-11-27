@@ -5,6 +5,7 @@
         <package android:name="com.tencent.mobileqq"/>
         <package android:name="com.tencent.mm"/>
     </queries>
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- 访问本地后端 127.0.0.1 与上游 API -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 听视频（listen mode）：前台服务保活 + 13+ 通知（通知被拒只影响可见性，服务照常跑） -->
@@ -29,6 +30,15 @@
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:networkSecurityConfig="@xml/network_security_config">
+        <provider
+            android:name=".AppUpdateFileProvider"
+            android:authorities="${applicationId}.app_update"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/app_update_paths"/>
+        </provider>
         <activity android:name=".CloudLoginActivity" android:exported="false"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|uiMode|density|fontScale"
             android:theme="@style/NormalTheme" android:windowSoftInputMode="adjustResize"/>

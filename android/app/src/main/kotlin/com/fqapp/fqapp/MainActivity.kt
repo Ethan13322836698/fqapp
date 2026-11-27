@@ -14,6 +14,7 @@ class MainActivity : FlutterActivity() {
     private var volumeKeyEnabled = false
     private var volumeChannel: MethodChannel? = null
     private var hapticsChannel: MethodChannel? = null
+    private var updateInstaller: AppUpdateInstaller? = null
 
     /** Read by the AI foreground-service bridge; a FGS may only start while this is true. */
     internal var isResumed = false
@@ -27,6 +28,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        updateInstaller = AppUpdateInstaller(this, flutterEngine.dartExecutor.binaryMessenger)
 
         // Native ExoPlayer host for DRM short dramas (CENC streaming decrypt).
         flutterEngine.plugins.add(NativePlayerPlugin())
@@ -96,6 +98,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        updateInstaller?.detach()
+        updateInstaller = null
         hapticsChannel?.setMethodCallHandler(null)
         hapticsChannel = null
         super.cleanUpFlutterEngine(flutterEngine)

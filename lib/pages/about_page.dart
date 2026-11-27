@@ -20,6 +20,7 @@ import 'package:flutter_lucide/flutter_lucide.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../widgets/app_ui/app_ui_scope.dart';
+import '../widgets/app_update_flow.dart';
 import '../widgets/home/home_design.dart';
 import '../widgets/settings/classic_settings_icons.dart';
 import '../widgets/settings/settings_adaptive.dart';
@@ -222,11 +223,10 @@ class _AboutInfoCard extends StatelessWidget {
           _InfoRow(
             icon: LucideIcons.square_arrow_out_up_right,
             title: '检查更新',
-            subtitle: '前往 GitHub 发布页查看新版本',
-            onTap: () => _launchExternalUrl(
-              context,
-              'https://github.com/ch6vip/novel-sound/releases',
-            ),
+            subtitle: AppUpdateFlow.supported
+                ? '查看或下载安装最新正式版'
+                : '前往 GitHub 发布页查看新版本',
+            onTap: () => AppUpdateFlow.check(context),
           ),
           _InfoRow(
             icon: LucideIcons.scale,

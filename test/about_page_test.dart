@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,9 @@ import 'package:fqapp/pages/about_page.dart';
 import 'package:fqapp/services/app_theme.dart';
 import 'package:fqapp/widgets/settings/settings_widgets.dart';
 import 'package:fqapp/widgets/wenku/wenku_ui.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 关于页改版后的结构与交互：全部信息行齐备、版本行点按复制、开源许可
 /// 打开框架许可页、微信赞赏打开赞赏码弹窗。
@@ -36,7 +41,7 @@ void main() {
     expect(find.text('当前版本'), findsOneWidget);
     expect(find.text(AboutPage.versionText), findsOneWidget);
     expect(find.text('检查更新'), findsOneWidget);
-    expect(find.text('前往 GitHub 发布页查看新版本'), findsOneWidget);
+    expect(find.text('查看或下载安装最新正式版'), findsOneWidget);
     expect(find.text('开源许可'), findsOneWidget);
     expect(find.text('GPL-3.0 与第三方组件许可'), findsOneWidget);
     expect(find.text('Source Code'), findsNothing);
@@ -67,6 +72,68 @@ void main() {
     expect(find.text('前往爱发电'), findsOneWidget);
     expect(find.text('微信赞赏'), findsOneWidget);
     expect(find.textContaining('仅限个人学习研究使用'), findsOneWidget);
+  });
+
+  testWidgets('关于页检查到新版后显示发布说明，并记录忽略的版本', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    const channel = MethodChannel('fqapp/app_update');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (call) async => {
+        'supported': true,
+        'version': '1.0.207',
+        'abis': ['arm64-v8a'],
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+
+    await http.runWithClient(
+      () async {
+        await pumpAbout(tester);
+        await tester.runAsync(() async {
+          await tester.tap(find.text('检查更新'));
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        });
+        await tester.pumpAndSettle();
+        expect(find.text('发现新版本 v1.0.208'), findsOneWidget);
+        expect(find.text('新版说明'), findsOneWidget);
+        expect(find.text('立即更新'), findsOneWidget);
+        await tester.runAsync(() async {
+          await tester.tap(find.text('忽略此版本'));
+          final preferences = await SharedPreferences.getInstance();
+          for (
+            var i = 0;
+            i < 50 &&
+                preferences.getString('app_update_ignored_version') == null;
+            i++
+          ) {
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+          }
+          expect(
+            preferences.getString('app_update_ignored_version'),
+            '1.0.208',
+          );
+        });
+        await tester.pumpAndSettle();
+        expect(find.text('发现新版本 v1.0.208'), findsNothing);
+      },
+      () => MockClient((request) async {
+        if (request.url.host == 'novel.tttq.de') {
+          return http.Response(
+            jsonEncode({'tag_name': 'v1.0.208', 'body': '新版说明'}),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        final checksum = 'a' * 64;
+        return http.Response('$checksum  app-arm64-v8a-release.apk\n', 200);
+      }),
+    );
   });
 
   testWidgets('点当前版本行复制版本号并提示', (tester) async {
