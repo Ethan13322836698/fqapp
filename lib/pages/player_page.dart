@@ -14,6 +14,7 @@ import '../models/series_detail.dart';
 import '../models/related_series.dart';
 import '../widgets/player/related_series_sheet.dart';
 import 'detail_page.dart' show openBookDetail;
+import 'about_page.dart' show AboutPage;
 import 'series_detail_page.dart' show SeriesDetailPage;
 import '../services/api_client.dart';
 import '../services/backend_transport.dart' show BackendRequest;
@@ -31,6 +32,7 @@ import 'drama_download_sheet.dart';
 import '../services/library_store.dart';
 import '../services/native_player.dart';
 import '../services/playback_issue.dart';
+import '../services/player_failure_report.dart';
 import '../services/player_history.dart';
 import '../services/player_layout_preferences.dart';
 import '../services/player_load_diagnostics.dart';
@@ -167,6 +169,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   int? _pendingCompletion;
   NativePlayer? _pendingAutoplay;
   PlaybackIssue? _error;
+  PlayerFailureReport? _failureReport;
   int _loadGeneration = 0;
   final Stopwatch _watchTime = Stopwatch();
   final List<StreamSubscription<dynamic>> _subs = [];
@@ -1316,6 +1319,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     setState(() {
       _initVideo = true;
       _error = null;
+      _failureReport = null;
       _duration = Duration.zero;
       _playing = false;
     });
@@ -1540,6 +1544,26 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     }
     _prefetchTimer?.cancel();
     _prefetchTimer = null;
+    final sample = _diagnostics.latestSample;
+    final failureReport = PlayerFailureReport(
+      version: AboutPage.versionText,
+      title: widget.title,
+      bookId: widget.bookId,
+      episodeId: widget.eps[_index].itemId,
+      episode: _index + 1,
+      attempt: generation,
+      issue: issue,
+      sample:
+          sample?.attempt == generation &&
+              sample?.episode == _index + 1 &&
+              sample?.outcome == 'error'
+          ? sample
+          : null,
+      duringPlayback: _hasDisplayed,
+      errorCode: errorCode,
+      httpStatusCode: httpStatusCode,
+      upstreamCode: error is ApiException ? error.upstreamCode : null,
+    );
     ++_loadGeneration;
     _progressTimer?.cancel();
     _watchTime.stop();
@@ -1551,6 +1575,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     }
     setState(() {
       _error = issue;
+      _failureReport = failureReport;
       _initVideo = false;
       _playing = false;
     });
@@ -2071,6 +2096,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           PlayerErrorFeedback(
             key: const ValueKey('player-error'),
             issue: _error!,
+            report: _failureReport,
             onRetry: widget.eps.isEmpty || !_error!.retryable ? null : retry,
           ),
         if (_error == null && (waiting || _player!.buffering))

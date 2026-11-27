@@ -30,6 +30,7 @@ const _allowedErrorCategories = <String>{
   'unavailable',
   'service',
   'decoding',
+  'unsupportedCodec',
   'unknown',
   'empty',
   'format',

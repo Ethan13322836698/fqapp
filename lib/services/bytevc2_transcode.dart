@@ -36,6 +36,7 @@ class Bytevc2TranscodeService {
   static const Duration _readTimeout = Duration(minutes: 3);
 
   bool? _available;
+  final Map<String, Future<String>> _inFlight = {};
 
   /// Whether this install carries a usable transcoder. The answer cannot change
   /// while the process lives, so it is resolved once. A platform error (the
@@ -87,22 +88,54 @@ class Bytevc2TranscodeService {
 
   /// Transcodes [source] into `bytevc2/<itemId>.h264.mp4` and returns its path.
   /// A finished output is reused, so one episode transcodes at most once.
-  Future<String> transcode(String itemId, EpisodeSource source) async {
+  Future<String> transcode(String itemId, EpisodeSource source) =>
+      _inFlight.putIfAbsent(itemId, () async {
+        try {
+          return await _transcodeEpisode(itemId, source);
+        } finally {
+          _inFlight.remove(itemId);
+        }
+      });
+
+  Future<String> _transcodeEpisode(String itemId, EpisodeSource source) async {
     final directory = Directory(
       '${(await getTemporaryDirectory()).path}/bytevc2',
     );
     await directory.create(recursive: true);
     final output = File('${directory.path}/$itemId.h264.mp4');
-    if (await _usable(output)) return output.path;
+    if (await _isMp4(output)) return output.path;
+    if (output.existsSync()) await output.delete();
     // The encrypted source survives a failed attempt, so a retry only pays for
     // the transcode instead of downloading the episode again.
     final input = File('${directory.path}/$itemId.bytevc2.mp4');
-    if (!await _usable(input)) await _download(source.url, input);
+    if (!await _isMp4(input)) {
+      if (input.existsSync()) await input.delete();
+      await _download(source.url, input);
+    }
     final partial = File('${output.path}.part');
     if (partial.existsSync()) await partial.delete();
-    await _transcode(input.path, partial.path, source.keyHex);
-    if (!await _usable(partial)) throw const ApiException('bytevc2 转码结果为空');
-    await partial.rename(output.path);
+    try {
+      await _transcode(input.path, partial.path, source.keyHex);
+      if (!await _isMp4(partial)) {
+        throw const ApiException('bytevc2 转码结果不是 MP4');
+      }
+      await partial.rename(output.path);
+    } catch (_) {
+      // A file can have an MP4 header and still be truncated or undecodable.
+      // Let the next attempt download a fresh source instead of reusing it.
+      if (input.existsSync()) {
+        try {
+          await input.delete();
+        } catch (_) {}
+      }
+      rethrow;
+    } finally {
+      if (partial.existsSync()) {
+        try {
+          await partial.delete();
+        } catch (_) {}
+      }
+    }
     try {
       await input.delete();
     } catch (_) {
@@ -113,14 +146,14 @@ class Bytevc2TranscodeService {
 
   Future<void> _transcode(String input, String output, String keyHex) async {
     try {
-      final result = await _channel
-          .invokeMethod<String>('transcode', {
-            'input': input,
-            'output': output,
-            'keyHex': keyHex,
-            'timeoutMs': _transcodeTimeout.inMilliseconds,
-          })
-          .timeout(_transcodeTimeout + const Duration(seconds: 30));
+      // The plugin kills timed-out processes before replying. A Dart timeout
+      // cannot cancel a queued native job, so keep file ownership until it ends.
+      final result = await _channel.invokeMethod<String>('transcode', {
+        'input': input,
+        'output': output,
+        'keyHex': keyHex,
+        'timeoutMs': _transcodeTimeout.inMilliseconds,
+      });
       if (result == null || result.isEmpty) {
         throw const ApiException('bytevc2 转码失败');
       }
@@ -149,10 +182,19 @@ class Bytevc2TranscodeService {
       request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
       final response = await request.close().timeout(_readTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        await response.drain<void>();
         throw ApiException('bytevc2 片源下载失败(${response.statusCode})');
       }
-      await response.pipe(target.openWrite());
+      final handle = await target.open(mode: FileMode.write);
+      try {
+        await for (final bytes in response.timeout(_readTimeout)) {
+          await handle.writeFrom(bytes);
+        }
+      } finally {
+        await handle.close();
+      }
+      if (!await _isMp4(target)) {
+        throw const ApiException('bytevc2 片源不是 MP4');
+      }
       completed = true;
     } on SocketException catch (error) {
       throw ApiException('bytevc2 片源下载失败:${error.message}');
@@ -165,9 +207,6 @@ class Bytevc2TranscodeService {
           await target.delete();
         } catch (_) {}
       }
-    }
-    if (!await _isMp4(target)) {
-      throw const ApiException('bytevc2 片源不是 MP4');
     }
   }
 

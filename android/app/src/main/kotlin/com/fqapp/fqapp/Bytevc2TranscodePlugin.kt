@@ -3,6 +3,7 @@ package com.fqapp.fqapp
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -65,10 +66,15 @@ class Bytevc2TranscodePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             result.error("UNAVAILABLE", "bytevc2 transcoder is not installed", null)
             return
         }
+        val enqueuedAt = SystemClock.elapsedRealtime()
         worker.execute {
             var failure: String? = null
             try {
-                val exit = runFfmpeg(binary, input, output, keyHex, timeoutMs)
+                val remainingMs = timeoutMs - (SystemClock.elapsedRealtime() - enqueuedAt)
+                if (remainingMs <= 0) {
+                    throw IllegalStateException("bytevc2 transcode timed out while queued")
+                }
+                val exit = runFfmpeg(binary, input, output, keyHex, remainingMs)
                 if (exit != 0) failure = "bytevc2 transcode exited with $exit"
             } catch (error: Exception) {
                 failure = error.message ?: error.toString()

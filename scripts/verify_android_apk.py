@@ -32,12 +32,14 @@ REQUIRED_LIBRARIES_BY_ABI = {
     "arm64-v8a": {
         "lib/arm64-v8a/libfqapi_core.so",
         "lib/arm64-v8a/libshortplay_crypto.so",
+        "lib/arm64-v8a/libbvc2transcode.so",
         "lib/arm64-v8a/libflutter.so",
         "lib/arm64-v8a/libapp.so",
     },
     "armeabi-v7a": {
         "lib/armeabi-v7a/libfqapi_core.so",
         "lib/armeabi-v7a/libshortplay_crypto.so",
+        "lib/armeabi-v7a/libbvc2transcode.so",
         "lib/armeabi-v7a/libflutter.so",
         "lib/armeabi-v7a/libapp.so",
     },

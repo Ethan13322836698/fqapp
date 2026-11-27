@@ -51,7 +51,7 @@ body:
     id: actual
     attributes:
       label: 实际结果
-      description: 崩溃请附堆栈；显示异常请附截图。
+      description: 播放失败请点击错误页「复制诊断」，粘贴到下方「诊断信息或日志」；显示异常请附截图。
     validations:
       required: true
 
@@ -59,7 +59,7 @@ body:
     id: media
     attributes:
       label: 截图或录屏
-      description: 直接把图片拖进这个输入框即可。界面问题一张截图胜过一段描述。
+      description: 界面问题请附截图或录屏。播放失败截图请保留诊断行，并尽量使用「复制诊断」提供文字。
     validations:
       required: false
 
@@ -81,8 +81,8 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: 日志（可选）
-      description: 拿不到可以留空，不必卡在这里。取法见 CONTRIBUTING.md 的「调试信息」。
+      label: 诊断信息或日志（可选）
+      description: 播放失败请粘贴错误页「复制诊断」的内容。完整日志可从「设置 → 服务 → 日志 → 日志操作 → 导出应用 + 核心」获取，作为 TXT 附件上传；拿不到可以留空。
       render: text
     validations:
       required: false
