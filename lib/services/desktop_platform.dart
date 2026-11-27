@@ -144,9 +144,25 @@ class DesktopPlatform with WindowListener {
   Future<void> initialize() async {
     if (!isWindowsDesktop && !isMacOSDesktop) return;
     MediaKit.ensureInitialized();
-    await windowManager.ensureInitialized();
     PlatformChannels.invoke = invoke;
     PlatformChannels.events = events;
+    initializeSpeech();
+    if (isMacOSDesktop) {
+      // The native runner shows its window even if a window-management plugin
+      // call stalls. Keep that optional setup off the first-frame path.
+      unawaited(
+        _initializeWindow().catchError((Object error, StackTrace stack) {
+          AppLog.w('startup', 'macOS 窗口设置失败', error: error, stack: stack);
+        }),
+      );
+      return;
+    }
+    await _initializeWindow();
+    await _initializeWindowsMediaControls();
+  }
+
+  Future<void> _initializeWindow() async {
+    await windowManager.ensureInitialized();
     windowManager.addListener(this);
     await windowManager.setPreventClose(true);
     final display = await screenRetriever.getPrimaryDisplay();
@@ -172,8 +188,9 @@ class DesktopPlatform with WindowListener {
         } catch (_) {}
       },
     );
-    initializeSpeech();
-    if (isMacOSDesktop) return;
+  }
+
+  Future<void> _initializeWindowsMediaControls() async {
     // Optional system media integration must not prevent reading or startup.
     try {
       await SMTCWindows.initialize();

@@ -11,7 +11,7 @@ Intel 和 Apple Silicon runner，产物为 `fqapp-macos-x64.zip` 和
 `fqapp-macos-arm64.zip`，附 SHA-256 校验文件。
 
 每次构建都会从源码编译 Rust/C 解密核心，随应用打包；检查所有 Mach-O 文件
-的架构、动态库路径及媒体解密入口，并验证代码签名。不会引用构建机器的
+的架构、动态库路径、图标及媒体解密入口，验证代码签名，并启动打包后的应用检查首帧。不会引用构建机器的
 Homebrew 动态库。macOS 播放库由固定版本的 media_kit macOS 插件提供。
 
 ## 本机编译

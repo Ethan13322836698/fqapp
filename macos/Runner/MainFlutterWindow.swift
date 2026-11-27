@@ -61,6 +61,9 @@ class MainFlutterWindow: NSWindow {
       }
     }
     super.awakeFromNib()
+    DispatchQueue.main.async { [weak self] in
+      self?.makeKeyAndOrderFront(nil)
+    }
   }
 
   deinit {

@@ -68,6 +68,11 @@ jobs:
           mkdir -p build/validation/macos
           bash scripts/build_macos.sh '${{ matrix.arch }}' 2>&1 | tee build/validation/macos/build.log
           python3 scripts/smoke_macos_core.py 'dist/fqapp-macos-${{ matrix.arch }}.app' 2>&1 | tee build/validation/macos/smoke.log
+      - name: Launch packaged macOS application
+        timeout-minutes: 3
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_macos_launch.py 'dist/fqapp-macos-${{ matrix.arch }}.app' 2>&1 | tee build/validation/macos/launch.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: fqapp-macos-${{ matrix.arch }}

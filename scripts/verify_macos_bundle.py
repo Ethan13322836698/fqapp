@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check bundle architectures, Rust exports, and relocatable native dependencies."""
 import pathlib
+import plistlib
 import subprocess
 import sys
 
@@ -15,6 +16,11 @@ for arch in required:
     for symbol in ('fq_desktop_media_open', 'fq_desktop_media_close', 'fq_desktop_media_free'):
         if symbol not in exports:
             raise SystemExit(f'Missing native media export for {arch}: {symbol}')
+with (app / 'Contents/Info.plist').open('rb') as info_file:
+    info = plistlib.load(info_file)
+icon = info.get('CFBundleIconFile')
+if icon not in ('AppIcon', 'AppIcon.icns') or not (app / 'Contents/Resources/AppIcon.icns').is_file():
+    raise SystemExit('Missing branded macOS app icon')
 if not (app / 'Contents/MacOS/fqapp').is_file():
     raise SystemExit('Missing app executable')
 if not any((app / 'Contents/Frameworks').glob('*[Mm]pv*.framework')):

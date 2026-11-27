@@ -1,3 +1,5 @@
+import 'dart:io' show Platform, stderr;
+
 import 'services/tablet_preferences.dart';
 import 'widgets/tablet_layout.dart';
 import 'services/audio_downloader.dart';
@@ -104,6 +106,11 @@ Future<void> main() async {
     // `_loadLocalData` 后面还会再读一次并纠正。
     await primeWithBudget(const Duration(milliseconds: 300));
     runApp(const ProviderScope(child: FqApp()));
+    if (isMacOSDesktop && Platform.environment['FQAPP_MACOS_SMOKE'] == '1') {
+      WidgetsBinding.instance.waitUntilFirstFrameRasterized
+          .then((_) => stderr.writeln('fqapp: first frame rasterized'))
+          .ignore();
+    }
   }, (error, stack) => AppLog.e('zone', '未捕获异步异常', error: error, stack: stack));
 }
 

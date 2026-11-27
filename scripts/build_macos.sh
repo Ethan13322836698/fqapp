@@ -34,8 +34,18 @@ done < <(find "$app/Contents" -type f -print0)
 [[ -f "$app/Contents/Frameworks/libfqapi_core.dylib" ]] || { echo 'Rust core missing' >&2; exit 1; }
 cp LICENSE "$app/Contents/Resources/LICENSE.txt"
 cp MACOS.md "$app/Contents/Resources/MACOS.md"
-# Architecture thinning changes signatures; produce a coherent ad-hoc signed bundle.
-codesign --force --deep --sign - --timestamp=none --entitlements macos/Runner/Release.entitlements "$app"
+# Thinning invalidates existing signatures. Sign code inside each bundle
+# first, then sign the enclosing bundles. App entitlements belong to Runner.
+while IFS= read -r -d '' binary; do
+  if file -b "$binary" | grep -q 'Mach-O'; then
+    codesign --force --sign - --timestamp=none "$binary"
+  fi
+done < <(find "$app/Contents/Frameworks" -type f -print0)
+while IFS= read -r -d '' bundle; do
+  codesign --force --sign - --timestamp=none "$bundle"
+done < <(find "$app/Contents/Frameworks" -depth -type d \
+  \( -name '*.framework' -o -name '*.app' -o -name '*.xpc' -o -name '*.bundle' \) -print0)
+codesign --force --sign - --timestamp=none --entitlements macos/Runner/Release.entitlements "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 python3 scripts/verify_macos_bundle.py "$app" "$arch"
 archive="$ROOT/dist/fqapp-macos-$arch.zip"

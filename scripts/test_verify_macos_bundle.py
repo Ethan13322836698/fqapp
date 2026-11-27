@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise packaging failures without requiring Apple command-line tools."""
 import pathlib
+import plistlib
 import runpy
 import subprocess
 import sys
@@ -11,7 +12,7 @@ from unittest.mock import patch
 VERIFY = pathlib.Path(__file__).with_name('verify_macos_bundle.py')
 
 class BundleChecks(unittest.TestCase):
-    def verify(self, slices='arm64', dependency='@rpath/libSystem.dylib'):
+    def verify(self, slices='arm64', dependency='@rpath/libSystem.dylib', icon=True):
         with tempfile.TemporaryDirectory() as directory:
             app = pathlib.Path(directory) / '含空格 fqapp.app'
             frameworks = app / 'Contents/Frameworks'
@@ -20,6 +21,12 @@ class BundleChecks(unittest.TestCase):
             (frameworks / 'Mpv.framework').mkdir()
             (app / 'Contents/MacOS').mkdir()
             (app / 'Contents/MacOS/fqapp').touch()
+            resources = app / 'Contents/Resources'
+            resources.mkdir()
+            (resources / 'AppIcon.icns').write_bytes(b'icon')
+            (app / 'Contents/Info.plist').write_bytes(
+                plistlib.dumps({'CFBundleIconFile': 'AppIcon' if icon else ''})
+            )
             def output(args, **kwargs):
                 if args[0] == 'nm':
                     return '_fq_desktop_media_open\n_fq_desktop_media_close\n_fq_desktop_media_free'
@@ -35,6 +42,10 @@ class BundleChecks(unittest.TestCase):
 
     def test_accepts_relocatable_matching_architecture(self):
         self.verify()
+
+    def test_requires_the_bundle_icon(self):
+        with self.assertRaisesRegex(SystemExit, 'Missing branded macOS app icon'):
+            self.verify(icon=False)
 
     def test_rejects_wrong_architecture(self):
         with self.assertRaisesRegex(SystemExit, 'Unexpected slices'):
