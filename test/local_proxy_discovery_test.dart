@@ -181,15 +181,16 @@ Active Connections
   });
 
   test('bounds concurrency and closes stalled connections after timeout', () async {
+    const expectedConnections = 12;
     var active = 0;
-    var peerPeak = 0;
     final releaseReads = Completer<void>();
+    final allPeersAccepted = Completer<void>();
     var receivedEof = 0;
     final allPeersClosed = Completer<void>();
     final tracker = _SocketTracker();
     final stalled = await _Server.start((socket, owner) async {
       active++;
-      if (active > peerPeak) peerPeak = active;
+      if (active == expectedConnections) allPeersAccepted.complete();
       try {
         // Delay peer EOF consumption deterministically, as can happen under CI load.
         await releaseReads.future;
@@ -197,7 +198,7 @@ Active Connections
       } finally {
         active--;
         receivedEof++;
-        if (receivedEof == tracker.connected) allPeersClosed.complete();
+        if (receivedEof == expectedConnections) allPeersClosed.complete();
       }
     });
     addTearDown(stalled.close);
@@ -213,19 +214,19 @@ Active Connections
     final clock = Stopwatch()..start();
     try {
       expect(await tracker.run(discovery.discover), isEmpty);
+      expect(clock.elapsed, lessThan(const Duration(seconds: 3)));
+      expect(tracker.connected, expectedConnections);
+      await allPeersAccepted.future.timeout(const Duration(seconds: 3));
     } finally {
       releaseReads.complete();
     }
-    expect(clock.elapsed, lessThan(const Duration(seconds: 3)));
-    await allPeersClosed.future.timeout(const Duration(seconds: 3));
     // Remote EOF processing can lag behind local destroy; count the client's
     // connecting/open sockets for concurrency, and await each peer for cleanup.
-    expect(tracker.attempts, 12);
+    expect(tracker.attempts, expectedConnections);
     expect(tracker.peak, lessThanOrEqualTo(2));
     expect(tracker.active, 0);
-    expect(tracker.connected, greaterThan(0));
-    expect(receivedEof, tracker.connected);
-    expect(peerPeak, greaterThan(2));
+    await allPeersClosed.future.timeout(const Duration(seconds: 3));
+    expect(receivedEof, expectedConnections);
     expect(active, 0);
   });
 
@@ -417,7 +418,9 @@ class _SocketTracker {
                   port,
                   sourceAddress: sourceAddress,
                   sourcePort: sourcePort,
-                  timeout: timeout,
+                  // This fixture exercises the handshake deadline. A delayed
+                  // connect callback can time out after the server accepts it.
+                  timeout: const Duration(seconds: 3),
                 ),
               );
               connected++;
