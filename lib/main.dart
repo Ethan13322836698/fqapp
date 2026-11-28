@@ -269,7 +269,6 @@ Future<void> _loadLocalData() async {
     // 样式 store 是可选外观偏好,内部吞错,读失败只回落默认外观(#421)。
     spFuture,
     optional(() async => TabletPreferences.instance.load(await spFuture)),
-    optional(DramaFeaturePreferences.instance.load),
     themeStyleFuture,
   ]);
   unawaited(optional(AudioPreferences.instance.load));
@@ -322,6 +321,8 @@ Future<void> _loadLocalData() async {
   // 否则广播到达时 Dart 侧还没有处理函数，原生侧只能按“未处理”回。
   FairMemoryService.instance.init();
   final sp = await spFuture;
+  // Apply the saved visibility before any shell pages mount.
+  DramaFeaturePreferences.instance.load(sp);
   // Note: Optional preference schemas cannot block local data startup; see
   // .agents/notes/implemented/bug-fix/2026-09-17-persistent-data-and-web-cancellation.md.
   final savedTheme = sp.get(themeModeKey);

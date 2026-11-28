@@ -16,22 +16,12 @@ class DramaFeaturePreferences {
       visible || !const {'短剧', '漫剧', '视频', '有声漫画'}.contains(label.trim());
 
   final ValueNotifier<bool> enabled = ValueNotifier(true);
-  Future<void>? _loading;
 
-  Future<void> load() => _loading ??= _load();
-
-  Future<void> _load() async {
-    try {
-      final preferences = await SharedPreferences.getInstance();
-      enabled.value = preferences.getBool(_key) ?? true;
-    } catch (_) {
-      _loading = null;
-      rethrow;
-    }
+  void load(SharedPreferences preferences) {
+    enabled.value = preferences.get(_key) != false;
   }
 
   Future<void> setEnabled(bool value) async {
-    await load();
     final preferences = await SharedPreferences.getInstance();
     if (!await preferences.setBool(_key, value)) {
       throw StateError('Could not save short drama preference');

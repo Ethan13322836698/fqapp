@@ -11,6 +11,7 @@ import 'package:fqapp/services/library_store.dart';
 import 'package:fqapp/services/player_style_config.dart';
 import 'package:fqapp/services/digg_store.dart';
 import 'package:fqapp/services/drama_download_store.dart';
+import 'package:fqapp/services/drama_feature_preferences.dart';
 import 'package:fqapp/services/shelf_group_store.dart';
 import 'package:fqapp/services/shelf_store.dart';
 import 'package:fqapp/services/swipe_guide_store.dart';
@@ -31,7 +32,11 @@ void main() {
     testWidgets(
       'theme preference ${scenario.value} restores without blocking local data',
       (tester) async {
-        SharedPreferences.setMockInitialValues({themeModeKey: scenario.value});
+        final dramaEnabled = scenario.expected != ThemeMode.dark;
+        SharedPreferences.setMockInitialValues({
+          themeModeKey: scenario.value,
+          if (!dramaEnabled) 'drama_feature_enabled': false,
+        });
         themeModeNotifier.value = ThemeMode.dark;
         final tempRoot = Directory.systemTemp.absolute;
         late Directory directory;
@@ -87,6 +92,7 @@ void main() {
           await tester.pumpWidget(const SizedBox.shrink());
           messenger.setMockMethodCallHandler(channel, null);
           themeModeNotifier.value = ThemeMode.system;
+          DramaFeaturePreferences.instance.enabled.value = true;
           await tester.runAsync(() async {
             await Hive.close();
             if (directory.absolute.parent.path != tempRoot.path) {
@@ -107,6 +113,7 @@ void main() {
 
         expect(find.text('local data ready'), findsOneWidget);
         expect(themeModeNotifier.value, scenario.expected);
+        expect(DramaFeaturePreferences.visible, dramaEnabled);
         expect(
           (await SharedPreferences.getInstance()).get(themeModeKey),
           scenario.value,
